@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
+import com.example.lipi.service.LipiOverlayService
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -107,37 +108,119 @@ fun SettingsScreen(
             ),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(18.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(18.dp)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "ভাসমান মেসেজিং সহকারী",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (isFloatingEnabled)
-                            "সক্রিয়: অনুমোদিত অ্যাপে বাংলিশ বার্তার পাশে 'ল' ব্যাজ প্রদর্শিত হবে।"
-                        else
-                            "নিষ্ক্রিয়: কোনো ভাসমান উইন্ডো প্রদর্শিত হবে না।",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "ভাসমান মেসেজিং সহকারী ('ল' বল)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (isFloatingEnabled)
+                                "সক্রিয়: স্ক্রিনে ভাসমান 'ল' বোতাম দৃশ্যমান। হোয়াটসঅ্যাপ বা মেসেঞ্জারে মেসেজ কপি করে 'ল' বল চাপলেই তাৎক্ষণিক বাংলা অনুবাদ আসবে।"
+                            else
+                                "নিষ্ক্রিয়: স্ক্রিনে ভাসমান উইন্ডো প্রদর্শিত হবে না।",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Switch(
+                        checked = isFloatingEnabled,
+                        onCheckedChange = { enable ->
+                            if (enable && !Settings.canDrawOverlays(context)) {
+                                Toast.makeText(context, "অনুগ্রহ করে প্রথমে ভাসমান উইন্ডো (Display over other apps) অন করুন", Toast.LENGTH_LONG).show()
+                                val intent = Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${context.packageName}")
+                                )
+                                try { context.startActivity(intent) } catch (e: Exception) { /* fallback */ }
+                            } else {
+                                viewModel.setFloatingServiceEnabled(enable)
+                                if (enable) {
+                                    val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
+                                        action = LipiOverlayService.ACTION_START_ASSISTANT
+                                    }
+                                    try { context.startService(serviceIntent) } catch (e: Exception) { e.printStackTrace() }
+                                } else {
+                                    val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
+                                        action = LipiOverlayService.ACTION_DISMISS
+                                    }
+                                    try { context.startService(serviceIntent) } catch (e: Exception) { e.printStackTrace() }
+                                }
+                            }
+                        },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = PadmaTealPrimary),
+                        modifier = Modifier.testTag("floating_master_switch")
                     )
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                Switch(
-                    checked = isFloatingEnabled,
-                    onCheckedChange = { viewModel.setFloatingServiceEnabled(it) },
-                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = PadmaTealPrimary),
-                    modifier = Modifier.testTag("floating_master_switch")
-                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Direct One-Tap Floating Ball Launcher Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            if (!Settings.canDrawOverlays(context)) {
+                                Toast.makeText(context, "ভাসমান উইন্ডো অনুমতি প্রয়োজন। সেটিংস থেকে 'Display over other apps' অন করুন।", Toast.LENGTH_LONG).show()
+                                val intent = Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${context.packageName}")
+                                )
+                                try { context.startActivity(intent) } catch (e: Exception) { /* fallback */ }
+                            } else {
+                                viewModel.setFloatingServiceEnabled(true)
+                                val intent = Intent(context, LipiOverlayService::class.java).apply {
+                                    action = LipiOverlayService.ACTION_START_ASSISTANT
+                                }
+                                try {
+                                    context.startService(intent)
+                                    Toast.makeText(context, "ভাসমান 'ল' বল স্ক্রিনে দৃশ্যমান হয়েছে!", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "সার্ভিস শুরু করা যায়নি: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("launch_floating_ball_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("স্ক্রিনে 'ল' বল দেখান", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.setFloatingServiceEnabled(false)
+                            val intent = Intent(context, LipiOverlayService::class.java).apply {
+                                action = LipiOverlayService.ACTION_DISMISS
+                            }
+                            try {
+                                context.startService(intent)
+                                Toast.makeText(context, "ভাসমান বল লুকানো হয়েছে", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) { /* fallback */ }
+                        },
+                        modifier = Modifier.testTag("hide_floating_ball_button"),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("লুকান")
+                    }
+                }
             }
         }
 

@@ -4,7 +4,11 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import android.widget.Toast
+import com.example.lipi.service.LipiOverlayService
+import com.example.ui.theme.PadmaTealPrimary
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
@@ -106,6 +110,86 @@ fun StudioScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Floating Ball Quick Action Card
+        val isFloatingEnabled by viewModel.isFloatingServiceEnabled.collectAsState()
+        val overlayGranted by viewModel.overlayPermissionGranted.collectAsState()
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isFloatingEnabled && overlayGranted)
+                    PadmaTealPrimary.copy(alpha = 0.15f)
+                else
+                    MaterialTheme.colorScheme.surfaceVariant
+            ),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(PadmaTealPrimary, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("ল", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    }
+                    Column {
+                        Text(
+                            text = "ভাসমান 'ল' বল (মেসেজিং সহকারী)",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = if (isFloatingEnabled && overlayGranted) "স্ক্রিনে সক্রিয় আছে" else "অন্য অ্যাপের ওপর ব্যবহারের জন্য চালু করুন",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Button(
+                    onClick = {
+                        if (!Settings.canDrawOverlays(context)) {
+                            Toast.makeText(context, "অনুমতি দিন: 'Display over other apps' অন করুন", Toast.LENGTH_LONG).show()
+                            val intent = Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                            try { context.startActivity(intent) } catch (e: Exception) { /* fallback */ }
+                        } else {
+                            val targetState = !(isFloatingEnabled && overlayGranted)
+                            viewModel.setFloatingServiceEnabled(targetState)
+                            val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
+                                action = if (targetState) LipiOverlayService.ACTION_START_ASSISTANT else LipiOverlayService.ACTION_DISMISS
+                            }
+                            try {
+                                context.startService(serviceIntent)
+                                Toast.makeText(context, if (targetState) "ভাসমান 'ল' বল স্ক্রিনে চালু হয়েছে!" else "ভাসমান বল লুকানো হয়েছে", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isFloatingEnabled && overlayGranted) MaterialTheme.colorScheme.error else PadmaTealPrimary
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(if (isFloatingEnabled && overlayGranted) "লুকান" else "চালু করুন", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
         // Mode Selector Card
         ModeSelectorCard(
             selectedMode = selectedMode,
