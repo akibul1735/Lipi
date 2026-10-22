@@ -88,4 +88,62 @@ class ExampleUnitTest {
         val spellResult2 = BengaliSpellDoctor.checkAndCorrect("অসুস্হ মানুষটি")
         assertEquals("অসুস্থ মানুষটি", spellResult2.correctedText)
     }
+
+    @Test
+    fun testVersion5PhraseMatching() {
+        val res1 = MixedScriptTokenizer.process("ami tomake bhalobashi", LipiMode.BANGLISH_TO_BENGALI)
+        assertEquals("আমি তোমাকে ভালোবাসি", res1.convertedText)
+
+        val res2 = MixedScriptTokenizer.process("assalamu alaikum, kemon achen?", LipiMode.BANGLISH_TO_BENGALI)
+        assertEquals("আসসালামু আলাইকুম, কেমন আছেন?", res2.convertedText)
+
+        val res3 = MixedScriptTokenizer.process("wa alaikum assalam, ami bhalo achi", LipiMode.BANGLISH_TO_BENGALI)
+        assertEquals("ওয়ালাইকুম আসসালাম, আমি ভালো আছি", res3.convertedText)
+
+        val res4 = MixedScriptTokenizer.process("kono shomossha nei, pore kotha hobe", LipiMode.BANGLISH_TO_BENGALI)
+        assertEquals("কোনো সমস্যা নেই, পরে কথা হবে", res4.convertedText)
+
+        val res5 = MixedScriptTokenizer.process("shubho jonmodin bondhu!", LipiMode.BANGLISH_TO_BENGALI)
+        assertEquals("শুভ জন্মদিন বন্ধু!", res5.convertedText)
+    }
+
+    @Test
+    fun testVersion5WordBank() {
+        // Slang, numbers, everyday nouns
+        val res1 = MixedScriptTokenizer.process("2day 2moro", LipiMode.BANGLISH_TO_BENGALI)
+        assertEquals("আজ আগামীকাল", res1.convertedText)
+
+        val res2 = MixedScriptTokenizer.process("wifi bkash faridpur", LipiMode.BANGLISH_TO_BENGALI)
+        assertEquals("ওয়াইফাই বিকাশ ফরিদপুর", res2.convertedText)
+
+        val res3 = MixedScriptTokenizer.process("afaik asap tbh", LipiMode.BANGLISH_TO_BENGALI)
+        assertEquals("আমার জানা মতে যত দ্রুত সম্ভব সত্যি বলতে", res3.convertedText)
+    }
+
+    @Test
+    fun testTextNormalizationRules() {
+        // 1. Chat elongation normalization (repeated vowels/consonants in texting)
+        val elongated = MixedScriptTokenizer.process("valoooo amiiii onnnnek khushi", LipiMode.BANGLISH_TO_BENGALI)
+        assertEquals("ভালো আমি অনেক খুশি", elongated.convertedText)
+
+        // 2. Bengali negative particle separation ("করবনা" -> "করব না", "যাবনা" -> "যাব না")
+        val verbNa = BengaliSpellDoctor.checkAndCorrect("আমি কাল যাবনা এবং এটা করবনা")
+        val normalizedVerbNa = com.example.lipi.engine.TextNormalizer.postNormalizeBengali(verbNa.correctedText)
+        assertTrue(normalizedVerbNa.contains("যাব না"))
+        assertTrue(normalizedVerbNa.contains("করব না"))
+
+        // 3. Punctuation spacing and Dari normalization
+        val punctuation = MixedScriptTokenizer.process("kemon acho ? ami bhalo asi |", LipiMode.BANGLISH_TO_BENGALI)
+        assertTrue(punctuation.convertedText.contains("কেমন আছো?"))
+        assertTrue(punctuation.convertedText.endsWith("।"))
+
+        // 4. URL and Email preservation
+        val urlText = "Lipi repo https://github.com/akibul1735/Lipi ekhane"
+        val urlRes = MixedScriptTokenizer.process(urlText, LipiMode.SMART_AUTO)
+        assertTrue(urlRes.convertedText.contains("https://github.com/akibul1735/Lipi"))
+
+        // 5. Bengali spelling rules (আবিস্কার -> আবিষ্কার, পোষ্ট -> পোস্ট, মাষ্টার -> মাস্টার)
+        val spellCheck = BengaliSpellDoctor.checkAndCorrect("নতুন পোষ্ট ও আবিস্কার")
+        assertEquals("নতুন পোস্ট ও আবিষ্কার", spellCheck.correctedText)
+    }
 }

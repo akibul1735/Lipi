@@ -214,7 +214,7 @@ object LipiDictionary {
     }
 
     // Common Banglish words and SMS forms mapped to precise Bengali script
-    val BANGLISH_LEXICON = mapOf(
+    private val BASE_BANGLISH_LEXICON = mapOf(
         // Pronouns & Collective
         "ami" to "আমি",
         "amra" to "আমরা",
@@ -630,6 +630,12 @@ object LipiDictionary {
         "nilam" to "নিলাম"
     )
 
+    // Common multi-word Banglish phrases from Version 5 Library (longest first)
+    val BANGLISH_PHRASES: List<Pair<String, String>> = LipiV5Lexicon.PHRASES
+
+    // Combined lexicon containing complete Version 5 expanded word bank and base words
+    val BANGLISH_LEXICON: Map<String, String> = LipiV5Lexicon.WORD_BANK + BASE_BANGLISH_LEXICON
+
     // Bengali Spelling Correction Dictionary:
     // Maps common Bengali spelling errors to correct standard Bengali with explanation
     data class SpellingRule(
@@ -644,6 +650,14 @@ object LipiDictionary {
         SpellingRule("অসুস্হ", "অসুস্থ", "যুক্তাক্ষর হিসেবে 'স' এর সাথে 'থ' (স্থ) হবে, 'হ' নয়।"),
         SpellingRule("পুরষ্কার", "পুরস্কার", "অ-কার ও আ-কারের পর বিসর্গ সন্ধিতে দন্ত্য 'স' হয় (পুরস্কার)।"),
         SpellingRule("আবিষ্কার", "আবিষ্কার", "ই-কার বা উ-কারের পর মূর্ধন্য 'ষ' হয়।"),
+        SpellingRule("আবিস্কার", "আবিষ্কার", "'আবিস্কার' নয়, ই-কারান্ত উপসর্গের পর মূর্ধন্য 'ষ' (আবিষ্কার)।"),
+        SpellingRule("পোষ্ট", "পোস্ট", "বিদেশি শব্দে মূর্ধন্য 'ষ' বর্জিত হয়ে দন্ত্য 'স' (পোস্ট)।"),
+        SpellingRule("মাষ্টার", "মাস্টার", "ইংরেজি বা বিদেশি শব্দে 'ষ্ট' এর পরিবর্তে 'স্ট' হবে (মাস্টার)।"),
+        SpellingRule("রেজিষ্ট্রেশন", "রেজিস্ট্রেশন", "বিদেশি শব্দে 'ষ্ট' এর বদলে 'স্ট' (রেজিস্ট্রেশন)।"),
+        SpellingRule("ষ্টেশন", "স্টেশন", "বিদেশি শব্দে 'ষ্ট' নয়, 'স্ট' (স্টেশন)।"),
+        SpellingRule("দাবী", "দাবি", "বাংলা একাডেমি প্রমিত নিয়মে অতৎসম শব্দে হ্রস্ব ই-কার (দাবি)।"),
+        SpellingRule("হাতী", "হাতি", "অতৎসম বাংলা শব্দে হ্রস্ব ই-কার (হাতি)।"),
+        SpellingRule("উপকারীতা", "উপকারিতা", "'তা' প্রত্যয় যুক্ত হলে পূর্বের দীর্ঘ ঈ-কার হ্রস্ব ই-কার হয় (উপকারিতা)।"),
         SpellingRule("নীরবতা", "নীরবতা", "সংস্কৃত নিয়মে 'নিঃ + রব' সন্ধিজাত শব্দে দীর্ঘ ঈ-কার 'নীরব'।"),
         SpellingRule("মরিচিকা", "মরীচিকা", "শুদ্ধ বানানে প্রথমটি দীর্ঘ 'রী' এবং দ্বিতীয়টি হ্রস্ব 'চি' (মরীচিকা)।"),
         SpellingRule("ইতিমধ্যে", "ইতোমধ্যে", "সন্ধির নিয়মে অ-কারের পর অন্তস্থ 'ব' থাকলে ও-কার হয় (ইতোমধ্যে)।"),

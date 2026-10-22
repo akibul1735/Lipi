@@ -120,6 +120,15 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
         repository.resetToDefaultWordbook()
     }
 
+    fun loadV5LibraryIntoWordbook(context: Context, overwrite: Boolean = false): com.example.lipi.data.ImportResult {
+        return try {
+            val content = context.assets.open("lipi_v5_library.txt").bufferedReader().use { it.readText() }
+            repository.bulkImport(content, overwrite)
+        } catch (e: Exception) {
+            com.example.lipi.data.ImportResult(0, 0, repository.customWordbook.value.size, e.message)
+        }
+    }
+
     fun checkSystemPermissions(context: Context) {
         _overlayPermissionGranted.value = Settings.canDrawOverlays(context)
     }

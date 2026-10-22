@@ -38,7 +38,7 @@ import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -556,6 +556,79 @@ fun SettingsScreen(
                         checked = convertDigits,
                         onCheckedChange = { viewModel.setConvertDigits(it) },
                         modifier = Modifier.testTag("convert_digits_switch")
+                    )
+                }
+            }
+        }
+
+        // Lipi Version 5 Library & Text Normalization Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = PadmaTealPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "লিপি v5 লাইব্রেরি ও টেক্সট নরমালাইজার",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "১০০০+ একক শব্দভাণ্ডার, ৫৪টি বহুপ্রচলিত বাক্য (লংগেস্ট ফ্রেজ ম্যাচিং), চ্যাট স্ট্রেচ সংকোচন (যেমন: valoooo → ভালো) এবং বাংলা একাডেমি ব্যাকরণ প্রমিতকরণ সক্রিয় রয়েছে।",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Button(
+                    onClick = {
+                        val res = viewModel.loadV5LibraryIntoWordbook(context, overwrite = false)
+                        if (res.errorMessage != null) {
+                            Toast.makeText(context, "ত্রুটি: ${res.errorMessage}", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "লিপি v5 লাইব্রেরির ${res.addedCount}টি শব্দ ব্যক্তিগত শব্দকোষে যুক্ত হয়েছে! (মোট: ${res.totalEntries}টি)",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("load_v5_library_button"),
+                    colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "v5 লাইব্রেরির সব শব্দ ব্যক্তিগত তালিকায় লোড করুন",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
                     )
                 }
             }
