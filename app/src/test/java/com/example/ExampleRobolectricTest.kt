@@ -3,6 +3,12 @@ package com.example
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.lipi.data.LipiRepository
+import org.junit.Rule
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.assertIsDisplayed
+import com.example.lipi.ui.SettingsScreen
+import com.example.lipi.ui.LipiViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -14,6 +20,9 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ExampleRobolectricTest {
+
+    @get:Rule
+    val composeTestRule = createComposeRule()
 
     @Test
     fun `read string from context`() {
@@ -94,5 +103,18 @@ class ExampleRobolectricTest {
         repository.removeWordbookEntry(found!!.id)
         val removed = repository.customWordbook.value.find { it.banglish == "valo theko" }
         assertTrue(removed == null)
+    }
+
+    @Test
+    fun `test settings screen renders without crashing`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = LipiRepository(context)
+        val viewModel = LipiViewModel(repository)
+
+        composeTestRule.setContent {
+            SettingsScreen(viewModel = viewModel)
+        }
+
+        composeTestRule.onNodeWithTag("floating_master_switch").assertIsDisplayed()
     }
 }

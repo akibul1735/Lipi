@@ -796,14 +796,21 @@ pdf=পিডিএফ"""
                         )
                     }
                 } else {
-                    Column(
-                        modifier = Modifier
+                    val displayedWords = filteredWordbook.take(50)
+                    val listModifier = if (filteredWordbook.size > 6) {
+                        Modifier
                             .fillMaxWidth()
-                            .height(if (filteredWordbook.size > 5) 240.dp else androidx.compose.ui.unit.Dp.Unspecified)
-                            .verticalScroll(rememberScrollState()),
+                            .height(260.dp)
+                            .verticalScroll(rememberScrollState())
+                    } else {
+                        Modifier.fillMaxWidth()
+                    }
+
+                    Column(
+                        modifier = listModifier,
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        filteredWordbook.forEach { entry ->
+                        displayedWords.forEach { entry ->
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
@@ -858,6 +865,16 @@ pdf=পিডিএফ"""
                                 }
                             }
                         }
+                    }
+
+                    if (filteredWordbook.size > 50) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "প্রথম ৫০টি প্রদর্শিত হচ্ছে (মোট ${filteredWordbook.size}টি শব্দ সংরক্ষিত, নির্দিষ্ট শব্দ খুঁজতে উপরের সার্চ ব্যবহার করুন)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
                     }
                 }
 
