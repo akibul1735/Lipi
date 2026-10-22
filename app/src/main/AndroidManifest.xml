@@ -3,8 +3,6 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Normal safe permissions: 100% compliant with Google Play Protect -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
