@@ -1,0 +1,26 @@
+Alias name: lipi
+Creation date: Oct 22, 2026
+Entry type: PrivateKeyEntry
+Certificate chain length: 1
+Certificate[1]:
+Owner: CN=Lipi, OU=Lipi, O=Lipi, L=Dhaka, ST=Unknown, C=BD
+Issuer: CN=Lipi, OU=Lipi, O=Lipi, L=Dhaka, ST=Unknown, C=BD
+Serial number: a586095cf71a22a3
+Valid from: Thu Oct 22 06:02:59 GMT 2026 until: Mon Mar 09 06:02:59 GMT 2054
+Certificate fingerprints:
+	 SHA1: F6:B5:03:95:AA:3A:13:D5:9A:32:B8:27:87:7F:BC:1B:F9:EE:0C:E1
+	 SHA256: BC:E1:9D:13:E3:91:22:CF:27:EF:6A:46:73:B9:38:7A:05:DE:FC:62:FD:8E:C8:E2:34:B3:36:38:92:F2:A6:F9
+Signature algorithm name: SHA384withRSA
+Subject Public Key Algorithm: 2048-bit RSA key
+Version: 3
+
+Extensions: 
+
+#1: ObjectId: 2.5.29.14 Criticality=false
+SubjectKeyIdentifier [
+KeyIdentifier [
+0000: 61 EC 9E 1F AA 1D 13 06   7A 59 5C 1C 89 AB 65 B8  a.......zY\...e.
+0010: EB BA CE 1B                                        ....
+]
+]
+

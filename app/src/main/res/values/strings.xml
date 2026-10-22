@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">Lipi (লিপি)</string>
+    <string name="tagline">বাংলিশ থেকে খাঁটি বাংলা ও বানান সংশোধন</string>
+    <string name="accessibility_service_description">লিপি অ্যাপের এই অ্যাক্সেসিবিলিটি সার্ভিসটি অনুমোদিত মেসেজিং অ্যাপে (হোয়াটসঅ্যাপ, মেসেঞ্জার ইত্যাদি) বাংলিশ বার্তা শনাক্ত করে তার পাশে বাংলা স্ক্রিপ্ট অনুবাদ ব্যাজ প্রদর্শন করতে ব্যবহৃত হয়। এটি কোনো ব্যক্তিগত বার্তা সংগ্রহ বা পরিবর্তন করে না।</string>
+    <string name="overlay_service_description">ভাসমান অনুবাদ উইন্ডো প্রদর্শনের জন্য ওভারলে অনুমতি প্রয়োজন।</string>
+</resources>
