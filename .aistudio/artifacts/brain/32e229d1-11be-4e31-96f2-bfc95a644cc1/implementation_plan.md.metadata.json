@@ -1,6 +1,6 @@
 {
-  "summary":  "Completed app streamlining: removed Chat Simulator, Supported Apps list, and legacy accessibility code. Enhanced pure copy-based workflow with floating 'ল' ball and Studio workbench. All tests pass and build succeeded.",
-  "updatedAt":  "2026-10-22T13:42:21.864532142Z",
+  "summary":  "Added two configurable transliteration styles in Settings: 'সকল টেক্সট বাংলায়' (with loanword conversion and colloquial time conversion) and 'কিছু ইংরেজি শব্দ preserve রাখা'. Added automated clipboard monitoring with quick floating preview card. Expanded lexicon, suffixes, and orthography rules.",
+  "updatedAt":  "2026-10-22T13:57:04.858342218Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

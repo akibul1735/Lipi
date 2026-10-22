@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.lipi.data.ConversionResult
 import com.example.lipi.data.LipiMode
 import com.example.lipi.data.LipiRepository
+import com.example.lipi.data.TransliterationStyle
 import com.example.lipi.data.WordbookEntry
 import com.example.lipi.engine.MixedScriptTokenizer
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +29,8 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
     val overlayPermissionGranted: StateFlow<Boolean> = _overlayPermissionGranted.asStateFlow()
 
     val isFloatingServiceEnabled: StateFlow<Boolean> = repository.isFloatingServiceEnabled
+    val isAutoClipboardMonitoringEnabled: StateFlow<Boolean> = repository.isAutoClipboardMonitoringEnabled
+    val transliterationStyle: StateFlow<TransliterationStyle> = repository.transliterationStyle
     val convertDigitsToBengali: StateFlow<Boolean> = repository.convertDigitsToBengali
     val customWordbook: StateFlow<List<WordbookEntry>> = repository.customWordbook
     val recentConversions: StateFlow<List<ConversionResult>> = repository.recentConversions
@@ -37,20 +40,26 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
         _inputText,
         _selectedMode,
         convertDigitsToBengali,
-        customWordbook
-    ) { text, mode, convertDigits, wordbook ->
+        customWordbook,
+        transliterationStyle
+    ) { text, mode, convertDigits, wordbook, style ->
         val customMap = wordbook.associate { it.banglish to it.bengali }
         MixedScriptTokenizer.process(
             inputText = text,
             mode = mode,
             convertDigitsToBengali = convertDigits,
-            customWordbook = customMap
+            customWordbook = customMap,
+            transliterationStyle = style
         )
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         MixedScriptTokenizer.process(_inputText.value, _selectedMode.value)
     )
+
+    fun setTransliterationStyle(style: TransliterationStyle) {
+        repository.setTransliterationStyle(style)
+    }
 
     fun updateInput(text: String) {
         _inputText.value = text
@@ -62,6 +71,10 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
 
     fun setFloatingServiceEnabled(enabled: Boolean) {
         repository.setFloatingServiceEnabled(enabled)
+    }
+
+    fun setAutoClipboardMonitoring(enabled: Boolean) {
+        repository.setAutoClipboardMonitoringEnabled(enabled)
     }
 
     fun setConvertDigits(enabled: Boolean) {

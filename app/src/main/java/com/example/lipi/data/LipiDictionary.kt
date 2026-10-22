@@ -1,8 +1,8 @@
 package com.example.lipi.data
 
 /**
- * Rich offline lexicon for Lipi:
- * 1. High-frequency Banglish colloquial terms, pronouns, and verb conjugations.
+ * Rich offline lexicon and training rules for Lipi:
+ * 1. High-frequency Banglish colloquial terms, SMS abbreviations, pronouns, and verb conjugations.
  * 2. Bengali spelling corrections (standard Bangla Academy orthography).
  * 3. English technical/borrowed words to preserve without transliterating.
  */
@@ -24,7 +24,11 @@ object LipiDictionary {
         "block", "unblock", "join", "gym", "coffee", "party", "pic", "photo",
         "tap", "learn", "more", "security", "changed", "change", "with", "your",
         "you", "see", "view", "read", "unread", "deleted", "encrypted", "encryption",
-        "privacy", "settings", "terms", "policy", "support", "help", "info", "account"
+        "privacy", "settings", "terms", "policy", "support", "help", "info", "account",
+        "github", "gitlab", "repo", "commit", "push", "pull", "merge", "branch",
+        "download", "upload", "update", "server", "site", "web", "android", "ios",
+        "software", "hardware", "screen", "display", "network", "bluetooth", "otg",
+        "speaker", "headphone", "airpods", "earphone", "sim1", "sim2", "gb", "mb", "kb"
     )
 
     // Standard English vocabulary to detect when a message is pure English (not Banglish)
@@ -48,7 +52,168 @@ object LipiDictionary {
         "congratulations", "happy", "birthday", "morning", "night", "evening"
     )
 
-    // Common Banglish words mapped to precise, high-accuracy Bengali script
+    // English loanwords commonly used in Bengali texting, with their authentic Bengali representations
+    // Used when user chooses "সকল টেক্সট বাংলায়" (ALL_BENGALI style)
+    val COMMON_ENGLISH_LOANWORDS_TO_BENGALI = mapOf(
+        "app" to "অ্যাপ",
+        "apps" to "অ্যাপস",
+        "meeting" to "মিটিং",
+        "meet" to "মিট",
+        "zoom" to "জুম",
+        "link" to "লিংক",
+        "pdf" to "পিডিএফ",
+        "call" to "কল",
+        "calling" to "কলিং",
+        "missed" to "মিসড",
+        "video" to "ভিডিও",
+        "audio" to "অডিও",
+        "mic" to "মাইক",
+        "cam" to "ক্যামেরা",
+        "camera" to "ক্যামেরা",
+        "email" to "ইমেইল",
+        "mail" to "মেইল",
+        "fb" to "ফেসবুক",
+        "facebook" to "ফেসবুক",
+        "whatsapp" to "হোয়াটসঅ্যাপ",
+        "youtube" to "ইউটিউব",
+        "google" to "গুগল",
+        "code" to "কোড",
+        "login" to "লগইন",
+        "password" to "পাসওয়ার্ড",
+        "group" to "গ্রুপ",
+        "admin" to "অ্যাডমিন",
+        "post" to "পোস্ট",
+        "like" to "লাইক",
+        "comment" to "কমেন্ট",
+        "share" to "শেয়ার",
+        "profile" to "প্রোফাইল",
+        "inbox" to "ইনবক্স",
+        "dm" to "ডিএম",
+        "sms" to "এসএমএস",
+        "sim" to "সিম",
+        "wifi" to "ওয়াইফাই",
+        "data" to "ডাটা",
+        "wait" to "অপেক্ষা",
+        "waiting" to "অপেক্ষমান",
+        "busy" to "ব্যস্ত",
+        "free" to "ফ্রি",
+        "ready" to "রেডি",
+        "late" to "লেট",
+        "done" to "ডান",
+        "sure" to "শিওর",
+        "send" to "পাঠাও",
+        "sent" to "পাঠানো হয়েছে",
+        "text" to "টেক্সট",
+        "msg" to "মেসেজ",
+        "typing" to "টাইপিং",
+        "online" to "অনলাইন",
+        "offline" to "অফলাইন",
+        "pic" to "ছবি",
+        "photo" to "ছবি",
+        "selfie" to "সেলফি",
+        "hospital" to "হাসপাতাল",
+        "doctor" to "ডাক্তার",
+        "nurse" to "নার্স",
+        "office" to "অফিস",
+        "class" to "ক্লাস",
+        "exam" to "পরীক্ষা",
+        "assignment" to "অ্যাসাইনমেন্ট",
+        "presentation" to "প্রেজেন্টেশন",
+        "cv" to "সিভি",
+        "resume" to "রিজিউমে",
+        "hr" to "এইচআর",
+        "sir" to "স্যার",
+        "madam" to "ম্যাডাম",
+        "boss" to "বস",
+        "uber" to "উবার",
+        "pathao" to "পাঠাও",
+        "bkash" to "বিকাশ",
+        "nagad" to "নগদ",
+        "rocket" to "রকেট",
+        "atm" to "এটিএম",
+        "card" to "কার্ড",
+        "laptop" to "ল্যাপটপ",
+        "pc" to "পিসি",
+        "tab" to "ট্যাব",
+        "mobile" to "মোবাইল",
+        "charger" to "চার্জার",
+        "battery" to "ব্যাটারি",
+        "screen" to "স্ক্রিন",
+        "display" to "ডিসপ্লে",
+        "coffee" to "কফি",
+        "tea" to "চা",
+        "gym" to "জিম",
+        "party" to "পার্টি",
+        "ok" to "ঠিক আছে",
+        "okay" to "ঠিক আছে",
+        "hi" to "হাই",
+        "hello" to "হ্যালো",
+        "hey" to "হেই",
+        "bye" to "বিদায়",
+        "pls" to "দয়া করে",
+        "please" to "দয়া করে",
+        "thanks" to "ধন্যবাদ",
+        "thank" to "ধন্যবাদ",
+        "welcome" to "স্বাগতম",
+        "good" to "ভালো",
+        "bad" to "খারাপ",
+        "fine" to "ঠিক",
+        "happy" to "খুশি",
+        "sad" to "দুঃখিত",
+        "love" to "ভালোবাসা"
+    )
+
+    /**
+     * Converts colloquial time expressions such as "5pm" to "বিকাল পাঁচটায়", "10am" to "সকাল দশটায়".
+     */
+    fun formatBengaliTime(token: String): String? {
+        val lower = token.trim().lowercase()
+        val match = Regex("""^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$""").matchEntire(lower) ?: return null
+        val hour = match.groupValues[1].toIntOrNull() ?: return null
+        val minutes = match.groupValues[2]
+        val amPm = match.groupValues[3]
+
+        val bengaliHour = when (hour) {
+            1 -> "এক"
+            2 -> "দুই"
+            3 -> "তিন"
+            4 -> "চার"
+            5 -> "পাঁচ"
+            6 -> "ছয়"
+            7 -> "সাত"
+            8 -> "আট"
+            9 -> "নয়"
+            10 -> "দশ"
+            11 -> "এগারো"
+            12 -> "বারো"
+            else -> hour.toString().map { DIGIT_MAP[it] ?: it }.joinToString("")
+        }
+
+        val period = if (amPm == "am") {
+            when (hour) {
+                12, in 1..4 -> "রাত"
+                in 5..11 -> "সকাল"
+                else -> "সকাল"
+            }
+        } else {
+            when (hour) {
+                12 -> "দুপুর"
+                in 1..3 -> "দুপুর"
+                in 4..6 -> "বিকাল"
+                in 7..11 -> "রাত"
+                else -> "সন্ধ্যা"
+            }
+        }
+
+        return if (minutes.isNotBlank() && minutes != "00") {
+            val bnMin = minutes.map { DIGIT_MAP[it] ?: it }.joinToString("")
+            "$period $bengaliHour টা $bnMin মিনিটে"
+        } else {
+            "$period ${bengaliHour}টায়"
+        }
+    }
+
+    // Common Banglish words and SMS forms mapped to precise Bengali script
     val BANGLISH_LEXICON = mapOf(
         // Pronouns & Collective
         "ami" to "আমি",
@@ -70,7 +235,7 @@ object LipiDictionary {
         "apnara" to "আপনারা",
         "apnake" to "আপনাকে",
         "apnar" to "আপনার",
-        "apnader" to "আপনারদের",
+        "apnader" to "আপনাদের",
         "se" to "সে",
         "tara" to "তারা",
         "take" to "তাকে",
@@ -82,14 +247,51 @@ object LipiDictionary {
         "ota" to "ওটা",
         "egulo" to "এগুলো",
         "ogulo" to "ওগুলো",
+        "egula" to "এগুলো",
+        "ogula" to "ওগুলো",
         "shob" to "সব",
         "sob" to "সব",
         "shobai" to "সবাই",
         "sobai" to "সবাই",
+        "sobay" to "সবাই",
+        "shobay" to "সবাই",
         "shobaike" to "সবাইকে",
         "sobaike" to "সবাইকে",
         "shobar" to "সবার",
         "sobar" to "সবার",
+
+        // Chat Abbreviations & Short forms
+        "kmn" to "কেমন",
+        "kno" to "কেন",
+        "kn" to "কেন",
+        "khbr" to "খবর",
+        "thx" to "ধন্যবাদ",
+        "thnx" to "ধন্যবাদ",
+        "tnx" to "ধন্যবাদ",
+        "sotti" to "সত্যি",
+        "shotti" to "সত্যি",
+        "mittha" to "মিথ্যা",
+        "mithya" to "মিথ্যা",
+        "misa" to "মিছা",
+        "valobashi" to "ভালোবাসি",
+        "bhalobashi" to "ভালোবাসি",
+        "valobasha" to "ভালোবাসা",
+        "bhalobasha" to "ভালোবাসা",
+        "ekhn" to "এখন",
+        "ekhon" to "এখন",
+        "tokhon" to "তখন",
+        "kokhon" to "কখন",
+        "kothay" to "কোথায়",
+        "kothaye" to "কোথায়",
+        "koi" to "কই",
+        "ki" to "কী",
+        "kee" to "কী",
+        "kisu" to "কিছু",
+        "kichu" to "কিছু",
+        "kisui" to "কিছুই",
+        "kichui" to "কিছুই",
+        "kobe" to "কবে",
+        "koto" to "কত",
 
         // User's Core Cases & Verb Forms: "kor" (করা)
         "korche" to "করছে",
@@ -107,12 +309,16 @@ object LipiDictionary {
         "korlam" to "করলাম",
         "korlo" to "করল",
         "korle" to "করলে",
+        "korsi" to "করেছি",
         "korechi" to "করেছি",
         "koresi" to "করেছি",
+        "korso" to "করেছো",
         "korecho" to "করেছো",
         "koreso" to "করেছো",
+        "korsen" to "করেছেন",
         "korechen" to "করেছেন",
         "koresen" to "করেছেন",
+        "korte" to "করতে",
 
         // User's Core Cases & Verb Forms: "ach" / "as" (আছি, আছো, আছে)
         "ache" to "আছে",
@@ -142,44 +348,74 @@ object LipiDictionary {
         "thakba" to "থাকবা",
         "thakuk" to "থাকুক",
         "thik thak" to "ঠিকঠাক",
+        "thikthak" to "ঠিকঠাক",
         "thikase" to "ঠিক আছে",
         "thikache" to "ঠিক আছে",
+        "pera" to "প্যারা",
+        "osthir" to "অস্থির",
+        "bindas" to "বিন্দাস",
+        "joss" to "জোশ",
+        "pagol" to "পাগল",
+        "pagli" to "পাগলী",
 
-        // Everyday Conversational Particles & Questions
+        // Everyday Conversational Particles & Movement
         "kemon" to "কেমন",
         "ajke" to "আজকে",
         "aajke" to "আজকে",
         "kire" to "কিরে",
-        "koi" to "কই",
         "taratari" to "তাড়াতাড়ি",
         "ay" to "আয়",
         "aay" to "আয়",
         "asho" to "আসো",
         "ashe" to "আসে",
         "ashbo" to "আসব",
+        "asbo" to "আসব",
+        "ashba" to "আসবা",
+        "asba" to "আসবা",
+        "ashbe" to "আসবে",
+        "asbe" to "আসবে",
+        "ashlam" to "আসলাম",
+        "aslam" to "আসলাম",
         "aschi" to "আসছি",
         "ashchi" to "আসছি",
+        "ashsi" to "আসছি",
+        "eshechi" to "এসেছি",
+        "esechi" to "এসেছি",
+        "esi" to "এসেছি",
         "jacchi" to "যাচ্ছি",
+        "jachhi" to "যাচ্ছি",
         "jabo" to "যাব",
+        "jaba" to "যাবা",
         "jabe" to "যাবে",
+        "gelam" to "গেলাম",
+        "gelo" to "গেল",
+        "gele" to "গেলে",
+        "gechi" to "গেছি",
+        "gesi" to "গেছি",
         "jani" to "জানি",
         "jano" to "জানো",
         "janen" to "জানেন",
         "jane" to "জানে",
-        "kothay" to "কোথায়",
         "shune" to "শুনে",
         "sune" to "শুনে",
         "shuno" to "শুনো",
         "suno" to "শুনো",
         "shunbo" to "শুনব",
+        "sunbo" to "শুনব",
         "shunche" to "শুনছে",
+        "sunche" to "শুনছে",
         "shunchi" to "শুনছি",
+        "sunchi" to "শুনছি",
         "shuncho" to "শুনছো",
+        "suncho" to "শুনছো",
+        "shunlam" to "শুনলাম",
+        "sunlam" to "শুনলাম",
         "bolte" to "বলতে",
         "bolbo" to "বলব",
         "bolcho" to "বলছো",
         "bolche" to "বলছে",
         "bolchi" to "বলছি",
+        "bolsi" to "বলছি",
         "bolchen" to "বলছেন",
         "bolba" to "বলবা",
         "bolbe" to "বলবে",
@@ -187,11 +423,18 @@ object LipiDictionary {
         "bolen" to "বলেন",
         "bole" to "বলে",
         "bollam" to "বললাম",
+        "bujhte" to "বুঝতে",
+        "bujte" to "বুঝতে",
         "bujhlam" to "বুঝলাম",
+        "bujlam" to "বুঝলাম",
         "bujhechi" to "বুঝেছি",
+        "bujesi" to "বুঝেছি",
+        "bujhini" to "বুঝিনি",
+        "bujini" to "বুঝিনি",
         "dekha" to "দেখা",
         "dekho" to "দেখো",
         "dekhechi" to "দেখেছি",
+        "dekesi" to "দেখেছি",
         "dekhe" to "দেখে",
         "dekhche" to "দেখছে",
         "dekhchi" to "দেখছি",
@@ -200,6 +443,14 @@ object LipiDictionary {
         "dekhbo" to "দেখব",
         "dekhbe" to "দেখবে",
         "dekhte" to "দেখতে",
+        "dekhlam" to "দেখলাম",
+        "parbo" to "পারব",
+        "parba" to "পারবা",
+        "parbe" to "পারবে",
+        "parchi" to "পারছি",
+        "parsi" to "পারছি",
+        "parlam" to "পারলাম",
+        "parbona" to "পারব না",
         "hobe" to "হবে",
         "hoche" to "হচ্ছে",
         "hocche" to "হচ্ছে",
@@ -210,13 +461,12 @@ object LipiDictionary {
         "holo" to "হলো",
         "hole" to "হলে",
         "na" to "না",
+        "nai" to "নাই",
+        "nei" to "নেই",
         "haa" to "হ্যাঁ",
         "haan" to "হ্যাঁ",
         "ha" to "হ্যাঁ",
         "keno" to "কেন",
-        "ki" to "কী",
-        "kobe" to "কবে",
-        "koto" to "কত",
         "to" to "তো",
         "toh" to "তো",
         "ar" to "আর",
@@ -225,9 +475,6 @@ object LipiDictionary {
         "ebong" to "এবং",
         "ba" to "বা",
         "othoba" to "অথবা",
-        "ekhon" to "এখন",
-        "kokhon" to "কখন",
-        "tokhon" to "তখন",
         "shomoy" to "সময়",
         "somoy" to "সময়",
         "shokal" to "সকাল",
@@ -239,6 +486,32 @@ object LipiDictionary {
         "kal" to "কাল",
         "kalke" to "কালকে",
         "poroshu" to "পরশু",
+        "ghumabo" to "ঘুমাব",
+        "ghumaite" to "ঘুমাতে",
+        "ghumacche" to "ঘুমাচ্ছে",
+        "ghumano" to "ঘুমানো",
+        "shute" to "শুতে",
+        "uthbo" to "উঠব",
+        "uthlam" to "উঠলাম",
+        "utho" to "উঠো",
+        "dorkar" to "দরকার",
+        "proyojon" to "প্রয়োজন",
+        "somossha" to "সমস্যা",
+        "shomoshya" to "সমস্যা",
+        "shamadhan" to "সমাধান",
+        "somadhan" to "সমাধান",
+        "chinta" to "চিন্তা",
+        "porikkha" to "পরীক্ষা",
+        "shubho" to "শুভ",
+        "subho" to "শুভ",
+        "shubhoratri" to "শুভরাত্রি",
+        "jonmodin" to "জন্মদিন",
+        "shuvechha" to "শুভেচ্ছা",
+        "ovinondon" to "অভিনন্দন",
+        "jam" to "জ্যাম",
+        "jame" to "জ্যামে",
+        "bepar" to "ব্যাপার",
+        "byapar" to "ব্যাপার",
 
         // Relationships & Courtesies
         "bhai" to "ভাই",
@@ -266,13 +539,22 @@ object LipiDictionary {
 
         // Places & Everyday Nouns
         "basha" to "বাসা",
+        "bashay" to "বাসায়",
         "bari" to "বাড়ি",
-        "office" to "অফিস",
+        "barite" to "বাড়িতে",
         "school" to "স্কুল",
         "college" to "কলেজ",
         "kaj" to "কাজ",
         "kaaj" to "কাজ",
         "khabar" to "খাবার",
+        "khabo" to "খাব",
+        "khaba" to "খাবা",
+        "khabe" to "খাবে",
+        "kheyechi" to "খেয়েছি",
+        "kheyesi" to "খেয়েছি",
+        "khelam" to "খেলাম",
+        "khawa" to "খাওয়া",
+        "khaoa" to "খাওয়া",
         "bhat" to "ভাত",
         "pani" to "পানি",
         "jol" to "জল",
@@ -285,31 +567,67 @@ object LipiDictionary {
         "poisa" to "পয়সা",
         "ekta" to "একটা",
         "duto" to "দুটো",
+        "duita" to "দুইটা",
+        "tin" to "তিন",
         "tinta" to "তিনটা",
+        "char" to "চার",
+        "charta" to "চারটা",
+        "paach" to "পাঁচ",
+        "pachta" to "পাঁচটা",
+        "choy" to "ছয়",
+        "choyta" to "ছয়টা",
+        "saat" to "সাত",
+        "sat" to "সাত",
+        "satta" to "সাতটা",
+        "aat" to "আট",
+        "aatta" to "আটটা",
+        "noy" to "নয়",
+        "noyta" to "নয়টা",
+        "dosh" to "দশ",
+        "doshta" to "দশটা",
         "onek" to "অনেক",
         "khub" to "খুব",
         "beshi" to "বেশি",
+        "besi" to "বেশি",
         "kom" to "কম",
+        "olpo" to "অল্প",
+        "ektu" to "একটু",
+        "besh" to "বেশ",
         "shundor" to "সুন্দর",
         "sundor" to "সুন্দর",
         "kharap" to "খারাপ",
         "notun" to "নতুন",
         "puran" to "পুরানো",
+        "shohoj" to "সহজ",
+        "kothin" to "কঠিন",
+        "druto" to "দ্রুত",
+        "dhire" to "ধীরে",
+        "shathe" to "সাথে",
+        "sathe" to "সাথে",
+        "songe" to "সঙ্গে",
+        "shonge" to "সঙ্গে",
         "bangladesh" to "বাংলাদেশ",
         "bangla" to "বাংলা",
         "dhaka" to "ঢাকা",
         "kolkata" to "কলকাতা",
         "chittagong" to "চট্টগ্রাম",
         "sylhet" to "সিলেট",
+        "rajshahi" to "রাজশাহী",
+        "khulna" to "খুলনা",
+        "barisal" to "বরিশাল",
         "pathao" to "পাঠাও",
         "pathiyechi" to "পাঠিয়েছি",
+        "pathiye" to "পাঠিয়ে",
         "dao" to "দাও",
         "den" to "দিন",
         "debo" to "দেব",
         "dicchi" to "দিচ্ছি",
         "naw" to "নাও",
         "nen" to "নেন",
-        "nebo" to "নেব"
+        "nebo" to "নেব",
+        "nicchi" to "নিচ্ছি",
+        "dilam" to "দিলাম",
+        "nilam" to "নিলাম"
     )
 
     // Bengali Spelling Correction Dictionary:
@@ -330,6 +648,7 @@ object LipiDictionary {
         SpellingRule("মরিচিকা", "মরীচিকা", "শুদ্ধ বানানে প্রথমটি দীর্ঘ 'রী' এবং দ্বিতীয়টি হ্রস্ব 'চি' (মরীচিকা)।"),
         SpellingRule("ইতিমধ্যে", "ইতোমধ্যে", "সন্ধির নিয়মে অ-কারের পর অন্তস্থ 'ব' থাকলে ও-কার হয় (ইতোমধ্যে)।"),
         SpellingRule("শ্রদ্ধাঞ্জলী", "শ্রদ্ধাঞ্জলি", "আঞ্জলি প্রত্যয়যুক্ত শব্দে হ্রস্ব ই-কার হয় (শ্রদ্ধাঞ্জলি, গীতাঞ্জলি)।"),
+        SpellingRule("গীতাঞ্জলী", "গীতাঞ্জলি", "আঞ্জলি প্রত্যয়যুক্ত শব্দে হ্রস্ব ই-কার হয় (গীতাঞ্জলি)।"),
         SpellingRule("সান্তনা", "সান্ত্বনা", "শুদ্ধ বানানে ত-এ ব-ফলা (ত্ব) হবে (সান্ত্বনা)।"),
         SpellingRule("স্বাগতম", "স্বাগতম", "দন্ত্য স-এ ব-ফলা যুক্ত হয়ে 'স্বাগতম' প্রমিত রূপ।"),
         SpellingRule("মুহুর্মুহু", "মুহুর্মুহু", "শুদ্ধ বানান: হ্রস্ব উ-কারযুক্ত উভয় অংশে 'মুহুর্মুহু'।"),
@@ -345,7 +664,18 @@ object LipiDictionary {
         SpellingRule("পড়াশুনা", "পড়াশোনা", "ও-কারান্ত প্রমিত রূপ 'পড়াশোনা'।"),
         SpellingRule("খুজছি", "খুঁজছি", "নাসিক্য উচ্চারণে চন্দ্রবিন্দু (ঁ) আবশ্যক: 'খুঁজছি'।"),
         SpellingRule("বাধা", "বাঁধা", "বন্ধন অর্থে চন্দ্রবিন্দুযুক্ত 'বাঁধা', প্রতিবন্ধকতা অর্থে 'বাধা'।"),
-        SpellingRule("ফোটো", "ছবি", "প্রমিত বাংলায় 'ছবি' বা বানান 'ফটো'।")
+        SpellingRule("ফোটো", "ছবি", "প্রমিত বাংলায় 'ছবি' বা বানান 'ফটো'।"),
+        SpellingRule("মুহুর্ত", "মুহূর্ত", "শুদ্ধ বানানে দীর্ঘ ঊ-কারযুক্ত 'মুহূর্ত'।"),
+        SpellingRule("শ্রেণী", "শ্রেণি", "বাংলা একাডেমি প্রমিত নিয়মে অতৎসম ও তৎসম আধুনিক বানানে হ্রস্ব ই-কার (শ্রেণি)।"),
+        SpellingRule("পাখী", "পাখি", "অতৎসম বাংলা শব্দে সর্বদাই হ্রস্ব ই-কার (পাখি)।"),
+        SpellingRule("ধরণ", "ধরন", "ণ-ত্ব বিধান অনুযায়ী অতৎসম শব্দে মূর্ধন্য 'ণ' হয় না, দন্ত্য 'ন' (ধরন)।"),
+        SpellingRule("ভূবন", "ভুবন", "শুদ্ধ সংস্কৃত বানানে হ্রস্ব উ-কারযুক্ত 'ভুবন'।"),
+        SpellingRule("প্রতিযোগীতা", "প্রতিযোগিতা", "'তা' প্রত্যয় যুক্ত হলে পূর্বের দীর্ঘ ঈ-কার হ্রস্ব ই-কার হয় (প্রতিযোগিতা)।"),
+        SpellingRule("সহযোগীতা", "সহযোগিতা", "'তা' প্রত্যয় যুক্ত হলে হ্রস্ব ই-কার হয় (সহযোগিতা)।"),
+        SpellingRule("কাহানী", "কাহিনি", "বাংলা একাডেমি নিয়মে হ্রস্ব ই-কারযুক্ত 'কাহিনি'।"),
+        SpellingRule("বাঙালী", "বাঙালি", "বাংলা একাডেমি প্রমিত বানানে হ্রস্ব ই-কার (বাঙালি)।"),
+        SpellingRule("উজ্জল", "উজ্জ্বল", "শুদ্ধ বানানে ব-ফলা যুক্ত হয়ে 'উজ্জ্বল'।"),
+        SpellingRule("সমীচিন", "সমীচীন", "শুদ্ধ সংস্কৃত বানানে উভয়টি দীর্ঘ ঈ-কার 'সমীচীন'।")
     )
 
     // Lookup map for fast correction

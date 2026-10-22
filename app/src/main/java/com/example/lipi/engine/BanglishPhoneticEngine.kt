@@ -22,9 +22,11 @@ object BanglishPhoneticEngine {
     private val CONJUNCT_PATTERNS = listOf(
         // 4 chars
         "kkhy" to "ক্ষ্য",
+        "kkhm" to "ক্ষ্ম",
         "cchh" to "চ্ছ",
         "shth" to "ষ্ঠ",
         "shch" to "শ্চ",
+        "ngsh" to "ংশ",
         // 3 chars
         "chh" to "ছ",
         "kkh" to "ক্ষ",
@@ -49,18 +51,23 @@ object BanglishPhoneticEngine {
         "khr" to "খ্র",
         "phr" to "ফ্র",
         "thr" to "থ্র",
+        "bhd" to "ব্ধ",
+        "jny" to "জ্ঞ",
+        "shn" to "শ্ন",
+        "shm" to "শ্ম",
         // 2 chars
         "kk" to "ক্ক", "kt" to "ক্ত", "kh" to "খ",
         "gg" to "জ্ঞ", "gh" to "ঘ",
         "ch" to "চ", "jh" to "ঝ",
-        "tt" to "ত্ত", "tn" to "ত্ন", "tm" to "ত্ম", "tr" to "ত্র", "th" to "থ",
-        "dd" to "দ্দ", "dm" to "দ্ম", "dh" to "ধ",
+        "tt" to "ত্ত", "tn" to "ত্ন", "tm" to "ত্ম", "tr" to "ত্র", "th" to "থ", "tw" to "ত্ব",
+        "dd" to "দ্দ", "dm" to "দ্ম", "dh" to "ধ", "dw" to "দ্ব",
         "nt" to "ন্ত", "nd" to "ন্দ", "nn" to "ন্ন",
         "pt" to "প্ত", "pn" to "প্ন", "pp" to "প্প", "pr" to "প্র", "ph" to "ফ",
         "bb" to "ব্ব", "br" to "ব্র", "bh" to "ভ",
         "mn" to "ম্ন", "mp" to "ম্প", "mb" to "ম্ব", "mm" to "ম্ম",
         "ll" to "ল্ল", "lp" to "ল্প",
         "sh" to "শ", "ss" to "ষ", "sp" to "স্প", "sk" to "স্ক", "st" to "স্ত", "sn" to "স্ন", "sm" to "স্ম",
+        "sw" to "স্ব", "sv" to "স্ব",
         "kr" to "ক্র", "gr" to "গ্র", "dr" to "দ্র",
         "ng" to "ং"
     )
@@ -90,8 +97,12 @@ object BanglishPhoneticEngine {
     )
 
     private val SUFFIXES = listOf(
-        "gulo" to "গুলো", "guli" to "গুলি", "der" to "দের", "er" to "ের", "ke" to "কে",
-        "ra" to "রা", "te" to "তে", "ta" to "টা", "ti" to "টি", "ei" to "েই"
+        "gulote" to "গুলোতে", "gulate" to "গুলোতে", "gulor" to "গুলোর", "gular" to "গুলোর",
+        "gulo" to "গুলো", "gula" to "গুলো", "guli" to "গুলি",
+        "derke" to "দেরকে", "der" to "দের", "er" to "ের", "ke" to "কে",
+        "ra" to "রা", "te" to "তে", "ta" to "টা", "ti" to "টি", "tar" to "টার", "tir" to "টির",
+        "tuku" to "টুকু", "khana" to "খানা", "khani" to "খানি",
+        "ei" to "েই", "o" to "ও"
     )
 
     private const val VOWEL_SIGNS = "ািীুূেৈোৌ"

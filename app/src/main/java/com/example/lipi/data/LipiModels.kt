@@ -6,6 +6,18 @@ enum class LipiMode(val titleBn: String, val subtitleBn: String) {
     SMART_AUTO("স্মার্ট অটো ডিটেক্ট", "বাংলিশ, বাংলা, ইংরেজি ও ইমোজি স্বয়ংক্রিয় প্রসেসিং")
 }
 
+enum class TransliterationStyle(val titleBn: String, val subtitleBn: String) {
+    ALL_BENGALI(
+        "সকল টেক্সট বাংলায়",
+        "কোন কিছুই ইংরেজিতে নয়। ইংরেজি হলেও বাংলাতে প্রচলিত শব্দ বাংলায় দেখাবে (যেমন: app → অ্যাপ, 5pm → বিকাল ৫টায়, meeting → মিটিং)"
+    ),
+    PRESERVE_ENGLISH(
+        "কিছু ইংরেজি শব্দ preserve রাখা",
+        "প্রচলিত প্রযুক্তি ও অফিস শব্দ ইংরেজিতেই থাকবে (যেমন: zoom, meeting, link, pdf)"
+    )
+}
+
+
 enum class TokenType {
     BANGLISH,       // "Ami", "valo", "korba"
     BENGALI,        // "আমি", "ভালো"

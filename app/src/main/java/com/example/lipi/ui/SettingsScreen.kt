@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -317,7 +318,11 @@ fun SettingsScreen(
             }
         }
 
-        // Additional Formatting Preferences
+        // User-Requested Transliteration Options:
+        // 1. সকল টেক্সট বাংলায় (কোন কিছুই ইংরেজিতে নয়, সেসব শব্দ ইংরেজি হলেও বাংলাতে প্রচলিত, সেসবও বাংলাতে দেখাবে: app - অ্যাপ, 5pm - বিকাল পাঁচটায়, ইত্যাদি)
+        // 2. কিছু ইংরেজি শব্দ preserve রাখা।
+        val transliterationStyle by viewModel.transliterationStyle.collectAsState()
+
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -326,12 +331,159 @@ fun SettingsScreen(
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
                 Text(
-                    text = "বাংলা ফরম্যাটিং অপশন",
+                    text = "বাংলিশ থেকে বাংলা রূপান্তর অপশন",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "অনুবাদ করার সময় ইংরেজি শব্দ ও সময় কীভাবে প্রদর্শিত হবে তা নির্বাচন করুন:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Option 1
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { viewModel.setTransliterationStyle(com.example.lipi.data.TransliterationStyle.ALL_BENGALI) }
+                        .testTag("transliteration_style_all_bengali"),
+                    color = if (transliterationStyle == com.example.lipi.data.TransliterationStyle.ALL_BENGALI)
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                    else
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (transliterationStyle == com.example.lipi.data.TransliterationStyle.ALL_BENGALI) MaterialTheme.colorScheme.primary else Color.Transparent
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        androidx.compose.material3.RadioButton(
+                            selected = transliterationStyle == com.example.lipi.data.TransliterationStyle.ALL_BENGALI,
+                            onClick = { viewModel.setTransliterationStyle(com.example.lipi.data.TransliterationStyle.ALL_BENGALI) },
+                            colors = androidx.compose.material3.RadioButtonDefaults.colors(selectedColor = PadmaTealPrimary)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "১। সকল টেক্সট বাংলায় (১০০% খাঁটি বাংলা)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "কোন কিছুই ইংরেজিতে নয়। যেসব শব্দ ইংরেজি হলেও বাংলাতে প্রচলিত, সেসবও বাংলাতে দেখাবে (যেমন: app → অ্যাপ, 5pm → বিকাল পাঁচটায়, meeting → মিটিং, link → লিংক ইত্যাদি)।",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Option 2
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { viewModel.setTransliterationStyle(com.example.lipi.data.TransliterationStyle.PRESERVE_ENGLISH) }
+                        .testTag("transliteration_style_preserve_english"),
+                    color = if (transliterationStyle == com.example.lipi.data.TransliterationStyle.PRESERVE_ENGLISH)
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                    else
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (transliterationStyle == com.example.lipi.data.TransliterationStyle.PRESERVE_ENGLISH) MaterialTheme.colorScheme.primary else Color.Transparent
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        androidx.compose.material3.RadioButton(
+                            selected = transliterationStyle == com.example.lipi.data.TransliterationStyle.PRESERVE_ENGLISH,
+                            onClick = { viewModel.setTransliterationStyle(com.example.lipi.data.TransliterationStyle.PRESERVE_ENGLISH) },
+                            colors = androidx.compose.material3.RadioButtonDefaults.colors(selectedColor = PadmaTealPrimary)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "২। কিছু ইংরেজি শব্দ preserve রাখা",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "প্রচলিত প্রযুক্তি ও অফিস শব্দ মূল ইংরেজি হরফে অক্ষত থাকবে (যেমন: zoom, meeting, link, pdf, call ইত্যাদি)।",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Additional Formatting & Automation Preferences
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Text(
+                    text = "স্মার্ট অটোমেশন ও ফরম্যাটিং",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.height(12.dp))
+
+                val isAutoClipboardEnabled by viewModel.isAutoClipboardMonitoringEnabled.collectAsState()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "স্বয়ংক্রিয় ক্লিপবোর্ড নজরদারি (Auto Monitor)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "যেকোনো অ্যাপে লেখা কপি করলেই স্বয়ংক্রিয়ভাবে বাংলা অনুবাদ তৈরি হবে ও ভাসমান বলের পাশে প্রিভিউ কার্ড দেখাবে।",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Switch(
+                        checked = isAutoClipboardEnabled,
+                        onCheckedChange = { viewModel.setAutoClipboardMonitoring(it) },
+                        modifier = Modifier.testTag("auto_clipboard_switch")
+                    )
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

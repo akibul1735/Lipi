@@ -23,11 +23,36 @@ class LipiRepository(private val context: Context) {
     )
     val convertDigitsToBengali: StateFlow<Boolean> = _convertDigitsToBengali.asStateFlow()
 
+    private val _isAutoClipboardMonitoringEnabled = MutableStateFlow(
+        prefs.getBoolean("auto_clipboard_monitoring", true)
+    )
+    val isAutoClipboardMonitoringEnabled: StateFlow<Boolean> = _isAutoClipboardMonitoringEnabled.asStateFlow()
+
+    private val _transliterationStyle = MutableStateFlow(
+        try {
+            val saved = prefs.getString("transliteration_style", TransliterationStyle.ALL_BENGALI.name)
+            TransliterationStyle.valueOf(saved ?: TransliterationStyle.ALL_BENGALI.name)
+        } catch (e: Exception) {
+            TransliterationStyle.ALL_BENGALI
+        }
+    )
+    val transliterationStyle: StateFlow<TransliterationStyle> = _transliterationStyle.asStateFlow()
+
     private val _customWordbook = MutableStateFlow<List<WordbookEntry>>(loadCustomWordbook())
     val customWordbook: StateFlow<List<WordbookEntry>> = _customWordbook.asStateFlow()
 
     private val _recentConversions = MutableStateFlow<List<ConversionResult>>(emptyList())
     val recentConversions: StateFlow<List<ConversionResult>> = _recentConversions.asStateFlow()
+
+    fun setTransliterationStyle(style: TransliterationStyle) {
+        prefs.edit().putString("transliteration_style", style.name).apply()
+        _transliterationStyle.value = style
+    }
+
+    fun setAutoClipboardMonitoringEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("auto_clipboard_monitoring", enabled).apply()
+        _isAutoClipboardMonitoringEnabled.value = enabled
+    }
 
     fun setFloatingServiceEnabled(enabled: Boolean) {
         prefs.edit().putBoolean("floating_enabled", enabled).apply()

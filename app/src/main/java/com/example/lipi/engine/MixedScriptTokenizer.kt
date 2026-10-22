@@ -5,11 +5,13 @@ import com.example.lipi.data.LipiDictionary
 import com.example.lipi.data.LipiMode
 import com.example.lipi.data.ProcessedToken
 import com.example.lipi.data.TokenType
+import com.example.lipi.data.TransliterationStyle
 
 /**
  * Intelligent Mixed-Script Tokenizer & Pipeline.
- * Separates Banglish, Bengali script, English technical vocabulary, numbers, and emojis.
- * Distinguishes genuine Banglish from standard English messages (e.g. WhatsApp system notifications).
+ * Supports user-selected transliteration style:
+ * 1. ALL_BENGALI: 100% text in Bengali (common English loanwords converted: app -> অ্যাপ, 5pm -> বিকাল পাঁচটায়, etc.)
+ * 2. PRESERVE_ENGLISH: Preserves technical and borrowed English terms in Latin script (zoom, meeting, link, pdf).
  */
 object MixedScriptTokenizer {
 
@@ -17,6 +19,7 @@ object MixedScriptTokenizer {
     private val LATIN_WORD_REGEX = Regex("""^[a-zA-Z]+$""")
     private val NUMBER_REGEX = Regex("""^\d+$""")
     private val TOKEN_SPLIT_REGEX = Regex("""([\p{L}\p{M}]+)|(\d+)|([^\p{L}\p{M}\d\s]+)|(\s+)""")
+    private val TIME_REGEX = Regex("""\b(\d{1,2}(?::\d{2})?)\s*(am|pm)\b""", RegexOption.IGNORE_CASE)
 
     // Distinctive English function and grammar words that identify English messages (e.g. WhatsApp notifications)
     private val ENGLISH_GRAMMAR_AND_SYSTEM_WORDS = setOf(
@@ -30,8 +33,6 @@ object MixedScriptTokenizer {
 
     /**
      * Determines whether a given text is predominantly standard English.
-     * Prevents English notifications (e.g. "Your security code with Akash changed. Tap to learn more.")
-     * from being mangled into phonetic gibberish.
      */
     fun isPredominantlyEnglish(text: String): Boolean {
         if (text.isBlank()) return false
@@ -57,13 +58,14 @@ object MixedScriptTokenizer {
     }
 
     /**
-     * Process any input text according to specified or auto-detected mode.
+     * Process any input text according to specified mode and transliteration style.
      */
     fun process(
         inputText: String,
         mode: LipiMode = LipiMode.SMART_AUTO,
         convertDigitsToBengali: Boolean = false,
-        customWordbook: Map<String, String> = emptyMap()
+        customWordbook: Map<String, String> = emptyMap(),
+        transliterationStyle: TransliterationStyle = TransliterationStyle.ALL_BENGALI
     ): ConversionResult {
         if (inputText.isBlank()) {
             return ConversionResult(inputText, inputText, emptyList(), mode, 0)
@@ -81,8 +83,8 @@ object MixedScriptTokenizer {
             )
         }
 
-        // If text is predominantly English and in SMART_AUTO mode, preserve it intact!
-        if (mode == LipiMode.SMART_AUTO && isPredominantlyEnglish(inputText)) {
+        // If text is predominantly English and in SMART_AUTO mode with PRESERVE_ENGLISH style, preserve it intact!
+        if (mode == LipiMode.SMART_AUTO && transliterationStyle == TransliterationStyle.PRESERVE_ENGLISH && isPredominantlyEnglish(inputText)) {
             val engTokens = TOKEN_SPLIT_REGEX.findAll(inputText).map { match ->
                 val v = match.value
                 ProcessedToken(
@@ -100,11 +102,20 @@ object MixedScriptTokenizer {
             )
         }
 
+        // When ALL_BENGALI style is active, pre-convert colloquial times like "5pm" -> "বিকাল পাঁচটায়"
+        val preprocessedText = if (transliterationStyle == TransliterationStyle.ALL_BENGALI) {
+            TIME_REGEX.replace(inputText) { matchResult ->
+                LipiDictionary.formatBengaliTime(matchResult.value) ?: matchResult.value
+            }
+        } else {
+            inputText
+        }
+
         val tokens = mutableListOf<ProcessedToken>()
         val outputBuilder = StringBuilder()
         var spellingCorrections = 0
 
-        val matches = TOKEN_SPLIT_REGEX.findAll(inputText)
+        val matches = TOKEN_SPLIT_REGEX.findAll(preprocessedText)
 
         for (match in matches) {
             val rawToken = match.value
@@ -118,7 +129,7 @@ object MixedScriptTokenizer {
 
                 // 2. Pure Numbers (e.g. "5", "2026")
                 NUMBER_REGEX.matches(rawToken) -> {
-                    val finalNumber = if (convertDigitsToBengali) {
+                    val finalNumber = if (convertDigitsToBengali || transliterationStyle == TransliterationStyle.ALL_BENGALI) {
                         rawToken.map { LipiDictionary.DIGIT_MAP[it] ?: it }.joinToString("")
                     } else {
                         rawToken
@@ -129,7 +140,6 @@ object MixedScriptTokenizer {
 
                 // 3. Bengali Script Word (contains Unicode 0980-09FF)
                 BENGALI_CHAR_RANGE.containsMatchIn(rawToken) -> {
-                    // Check spelling doctor for Bengali tokens
                     val spellCheck = BengaliSpellDoctor.checkAndCorrect(rawToken)
                     if (spellCheck.correctionsCount > 0) {
                         spellingCorrections += spellCheck.correctionsCount
@@ -152,30 +162,38 @@ object MixedScriptTokenizer {
                 LATIN_WORD_REGEX.matches(rawToken) -> {
                     val lower = rawToken.lowercase()
 
-                    // Check if it's a preserved/standard English word that should stay in English
-                    val isPreserved = LipiDictionary.PRESERVED_ENGLISH_WORDS.contains(lower) ||
-                            (LipiDictionary.STANDARD_ENGLISH_WORDS.contains(lower) && !LipiDictionary.BANGLISH_LEXICON.containsKey(lower))
+                    // User wordbook takes highest priority
+                    val customWord = customWordbook[lower]
 
-                    if (isPreserved && mode != LipiMode.BANGLISH_TO_BENGALI) {
-                        outputBuilder.append(rawToken)
-                        tokens.add(
-                            ProcessedToken(
-                                original = rawToken,
-                                converted = rawToken,
-                                type = TokenType.ENGLISH_TECH
-                            )
-                        )
+                    if (customWord != null) {
+                        outputBuilder.append(customWord)
+                        tokens.add(ProcessedToken(rawToken, customWord, TokenType.BANGLISH))
+                    } else if (transliterationStyle == TransliterationStyle.ALL_BENGALI) {
+                        // Option 1: ALL TEXT IN BENGALI (nothing in English script)
+                        // Check if it's a known common English loanword (e.g. app -> অ্যাপ, zoom -> জুম, meeting -> মিটিং)
+                        val loanword = LipiDictionary.COMMON_ENGLISH_LOANWORDS_TO_BENGALI[lower]
+
+                        val resultBengali = when {
+                            loanword != null -> loanword
+                            LipiDictionary.BANGLISH_LEXICON.containsKey(lower) -> LipiDictionary.BANGLISH_LEXICON[lower]!!
+                            else -> BanglishPhoneticEngine.transliterateWord(rawToken, customWordbook)
+                        }
+
+                        outputBuilder.append(resultBengali)
+                        tokens.add(ProcessedToken(rawToken, resultBengali, TokenType.BANGLISH))
                     } else {
-                        // It is a Banglish token to be transliterated!
-                        val transliterated = BanglishPhoneticEngine.transliterateWord(rawToken, customWordbook)
-                        outputBuilder.append(transliterated)
-                        tokens.add(
-                            ProcessedToken(
-                                original = rawToken,
-                                converted = transliterated,
-                                type = TokenType.BANGLISH
-                            )
-                        )
+                        // Option 2: PRESERVE_ENGLISH (keep common English/tech terms in Latin script)
+                        val isPreserved = LipiDictionary.PRESERVED_ENGLISH_WORDS.contains(lower) ||
+                                (LipiDictionary.STANDARD_ENGLISH_WORDS.contains(lower) && !LipiDictionary.BANGLISH_LEXICON.containsKey(lower))
+
+                        if (isPreserved && mode != LipiMode.BANGLISH_TO_BENGALI) {
+                            outputBuilder.append(rawToken)
+                            tokens.add(ProcessedToken(rawToken, rawToken, TokenType.ENGLISH_TECH))
+                        } else {
+                            val transliterated = BanglishPhoneticEngine.transliterateWord(rawToken, customWordbook)
+                            outputBuilder.append(transliterated)
+                            tokens.add(ProcessedToken(rawToken, transliterated, TokenType.BANGLISH))
+                        }
                     }
                 }
 
@@ -198,7 +216,6 @@ object MixedScriptTokenizer {
 
     /**
      * Determines whether a given text likely contains readable Banglish.
-     * Returns false for English system messages and English chats.
      */
     fun hasBanglishContent(text: String): Boolean {
         if (text.isBlank() || text.length < 2) return false
@@ -208,7 +225,7 @@ object MixedScriptTokenizer {
         var banglishHits = 0
         for (w in words) {
             val cleaned = w.filter { it.isLetter() }
-            if (LipiDictionary.BANGLISH_LEXICON.containsKey(cleaned)) {
+            if (LipiDictionary.BANGLISH_LEXICON.containsKey(cleaned) || LipiDictionary.COMMON_ENGLISH_LOANWORDS_TO_BENGALI.containsKey(cleaned)) {
                 banglishHits++
             }
         }

@@ -14,6 +14,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
 import android.text.Editable
+import android.text.TextUtils
 import android.text.TextWatcher
 import android.util.TypedValue
 import android.view.Gravity
@@ -29,8 +30,10 @@ import com.example.lipi.engine.MixedScriptTokenizer
 
 /**
  * Native Android Floating Overlay Assistant Service.
- * Provides a persistent draggable floating badge ('ল') over WhatsApp, Messenger, etc.
- * Supports interactive popup with reliable Paste and Copy functionality.
+ * Provides:
+ * 1. Persistent draggable floating badge ('ল') over WhatsApp, Messenger, etc.
+ * 2. Automated Clipboard Monitoring: Instantly detects copied Banglish, shows quick floating translation preview pill.
+ * 3. Interactive translation popup with reliable Paste and Copy functionality.
  */
 class LipiOverlayService : Service() {
 
@@ -46,8 +49,16 @@ class LipiOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var floatingBadgeView: View? = null
     private var translationPopupView: View? = null
+    private var quickPreviewView: View? = null
+    private var quickPreviewDismissRunnable: Runnable? = null
+
+    private var activeInputField: EditText? = null
+    private var activeTranslationText: TextView? = null
+
     private var currentText: String = ""
     private var convertedBengali: String = ""
+    private var lastObservedClipText: String = ""
+
     private var clipboardManager: ClipboardManager? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -107,14 +118,44 @@ class LipiOverlayService : Service() {
         return START_STICKY
     }
 
+    private fun getTransliterationStyle(): com.example.lipi.data.TransliterationStyle {
+        val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
+        val styleName = prefs.getString("transliteration_style", com.example.lipi.data.TransliterationStyle.ALL_BENGALI.name)
+        return try {
+            com.example.lipi.data.TransliterationStyle.valueOf(styleName ?: com.example.lipi.data.TransliterationStyle.ALL_BENGALI.name)
+        } catch (e: Exception) {
+            com.example.lipi.data.TransliterationStyle.ALL_BENGALI
+        }
+    }
+
+    /**
+     * Automated clipboard monitoring: Triggered whenever user copies any text on Android.
+     */
     private fun checkClipboardForBanglish() {
+        val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
+        val isMonitoringEnabled = prefs.getBoolean("auto_clipboard_monitoring", true)
+        if (!isMonitoringEnabled) return
+
         try {
             val clip = clipboardManager?.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() ?: return
-            if (clip.isNotBlank() && MixedScriptTokenizer.hasBanglishContent(clip)) {
+            if (clip.isNotBlank() && clip != lastObservedClipText && MixedScriptTokenizer.hasBanglishContent(clip)) {
+                lastObservedClipText = clip
                 currentText = clip
-                convertedBengali = MixedScriptTokenizer.process(clip).convertedText
+                val convertDigits = prefs.getBoolean("convert_digits", false)
+                val conversion = MixedScriptTokenizer.process(
+                    inputText = clip,
+                    convertDigitsToBengali = convertDigits,
+                    transliterationStyle = getTransliterationStyle()
+                )
+                convertedBengali = conversion.convertedText
+
                 mainHandler.post {
-                    Toast.makeText(this, "লিপি: কপি করা মেসেজ প্রস্তুত ('ল' বোতামে চাপুন)", Toast.LENGTH_SHORT).show()
+                    // Update active open popup if user is inside it
+                    activeInputField?.setText(currentText)
+                    activeTranslationText?.text = convertedBengali
+
+                    // Show sleek quick preview floating card
+                    showQuickPreviewCard(convertedBengali)
                 }
             }
         } catch (e: Exception) {
@@ -216,6 +257,7 @@ class LipiOverlayService : Service() {
                         if (isClick) {
                             lastBadgeX = layoutParams.x
                             lastBadgeY = layoutParams.y
+                            dismissQuickPreview()
                             onBadgeClicked(layoutParams.x, layoutParams.y)
                         } else {
                             val screenWidth = displayMetrics.widthPixels
@@ -249,13 +291,145 @@ class LipiOverlayService : Service() {
         }
     }
 
+    /**
+     * Shows a lightweight floating preview pill right next to the badge when clipboard is copied.
+     */
+    private fun showQuickPreviewCard(bengaliText: String) {
+        if (!Settings.canDrawOverlays(this)) return
+        dismissQuickPreview()
+
+        val displayMetrics = resources.displayMetrics
+        val width = (260 * displayMetrics.density).toInt()
+
+        val layoutParams = WindowManager.LayoutParams(
+            width,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            val posX = if (lastBadgeX > displayMetrics.widthPixels / 2) {
+                lastBadgeX - width - 16
+            } else {
+                lastBadgeX + (58 * displayMetrics.density).toInt()
+            }
+            x = posX.coerceIn(16, displayMetrics.widthPixels - width - 16)
+            y = lastBadgeY.coerceIn(80, displayMetrics.heightPixels - 250)
+        }
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(28, 20, 28, 20)
+            background = GradientDrawable().apply {
+                cornerRadius = 24f
+                setColor(0xFF0F1B20.toInt())
+                setStroke((2 * displayMetrics.density).toInt(), 0xFF57DFCE.toInt())
+            }
+            elevation = 28f
+        }
+
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val title = TextView(this).apply {
+            text = "📋 স্বয়ংক্রিয় বাংলা রূপান্তর:"
+            setTextColor(0xFF57DFCE.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+
+        val closeBtn = TextView(this).apply {
+            text = "✕"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setPadding(8, 0, 8, 8)
+            setOnClickListener { dismissQuickPreview() }
+        }
+
+        titleRow.addView(title)
+        titleRow.addView(closeBtn)
+
+        val preview = TextView(this).apply {
+            text = bengaliText
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            maxLines = 3
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, 8, 0, 14)
+        }
+
+        val copyActionBtn = Button(this).apply {
+            text = "কপি করুন"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            background = GradientDrawable().apply {
+                cornerRadius = 16f
+                setColor(0xFFD86B43.toInt()) // Terracotta
+            }
+            setOnClickListener {
+                try {
+                    val clip = ClipData.newPlainText("Bengali Translation", bengaliText)
+                    clipboardManager?.setPrimaryClip(clip)
+                    Toast.makeText(this@LipiOverlayService, "✓ বাংলা অনুবাদ ক্লিপবোর্ডে কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                dismissQuickPreview()
+            }
+        }
+
+        card.addView(titleRow)
+        card.addView(preview)
+        card.addView(copyActionBtn)
+
+        quickPreviewView = card
+        try {
+            windowManager?.addView(quickPreviewView, layoutParams)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Auto dismiss after 6 seconds
+        quickPreviewDismissRunnable = Runnable { dismissQuickPreview() }
+        mainHandler.postDelayed(quickPreviewDismissRunnable!!, 6000)
+    }
+
+    private fun dismissQuickPreview() {
+        quickPreviewDismissRunnable?.let { mainHandler.removeCallbacks(it) }
+        quickPreviewDismissRunnable = null
+        if (quickPreviewView != null) {
+            try {
+                windowManager?.removeView(quickPreviewView)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            quickPreviewView = null
+        }
+    }
+
+    private fun processText(text: String): String {
+        val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
+        val convertDigits = prefs.getBoolean("convert_digits", false)
+        return MixedScriptTokenizer.process(
+            inputText = text,
+            convertDigitsToBengali = convertDigits,
+            transliterationStyle = getTransliterationStyle()
+        ).convertedText
+    }
+
     private fun onBadgeClicked(anchorX: Int, anchorY: Int) {
         // Read latest clipboard if available
         try {
             val clipText = clipboardManager?.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()
             if (!clipText.isNullOrBlank()) {
                 currentText = clipText
-                convertedBengali = MixedScriptTokenizer.process(clipText).convertedText
+                convertedBengali = processText(clipText)
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -335,13 +509,14 @@ class LipiOverlayService : Service() {
                 setText(currentText)
             }
         }
+        activeInputField = inputField
 
         // Live Translated Output Display
         val translationText = TextView(this).apply {
             text = if (convertedBengali.isNotBlank())
                 convertedBengali
             else if (currentText.isNotBlank())
-                MixedScriptTokenizer.process(currentText).convertedText
+                processText(currentText)
             else
                 "এখানে বাংলা অনুবাদ দৃশ্যমান হবে..."
             setTextColor(0xFF57DFCE.toInt())
@@ -349,6 +524,7 @@ class LipiOverlayService : Service() {
             setLineSpacing(6f, 1.2f)
             setPadding(0, 14, 0, 16)
         }
+        activeTranslationText = translationText
 
         // Real-time transliteration as user types
         inputField.addTextChangedListener(object : TextWatcher {
@@ -357,7 +533,7 @@ class LipiOverlayService : Service() {
                 val input = s?.toString() ?: ""
                 currentText = input
                 if (input.isNotBlank()) {
-                    convertedBengali = MixedScriptTokenizer.process(input).convertedText
+                    convertedBengali = processText(input)
                     translationText.text = convertedBengali
                 } else {
                     convertedBengali = ""
@@ -392,13 +568,13 @@ class LipiOverlayService : Service() {
                 if (!clipText.isNullOrBlank()) {
                     inputField.setText(clipText)
                     currentText = clipText
-                    convertedBengali = MixedScriptTokenizer.process(clipText).convertedText
+                    convertedBengali = processText(clipText)
                     translationText.text = convertedBengali
                     Toast.makeText(this@LipiOverlayService, "লেখা পেস্ট ও রূপান্তর হয়েছে!", Toast.LENGTH_SHORT).show()
                 } else {
                     val typed = inputField.text.toString()
                     if (typed.isNotBlank()) {
-                        convertedBengali = MixedScriptTokenizer.process(typed).convertedText
+                        convertedBengali = processText(typed)
                         translationText.text = convertedBengali
                         Toast.makeText(this@LipiOverlayService, "রূপান্তর সম্পন্ন হয়েছে!", Toast.LENGTH_SHORT).show()
                     } else {
@@ -420,7 +596,7 @@ class LipiOverlayService : Service() {
                 val textToCopy = if (convertedBengali.isNotBlank()) {
                     convertedBengali
                 } else if (inputField.text.isNotBlank()) {
-                    MixedScriptTokenizer.process(inputField.text.toString()).convertedText
+                    processText(inputField.text.toString())
                 } else ""
 
                 if (textToCopy.isNotBlank()) {
@@ -446,10 +622,6 @@ class LipiOverlayService : Service() {
         actionRow.addView(spacer)
         actionRow.addView(copyBtn)
 
-        val spacerMiddle = View(this).apply {
-            setLayoutParams(LinearLayout.LayoutParams(0, 12))
-        }
-
         container.addView(headerRow)
         container.addView(inputField)
         container.addView(translationText)
@@ -464,6 +636,8 @@ class LipiOverlayService : Service() {
     }
 
     private fun dismissTranslationPopup() {
+        activeInputField = null
+        activeTranslationText = null
         if (translationPopupView != null) {
             try {
                 windowManager?.removeView(translationPopupView)
@@ -475,6 +649,7 @@ class LipiOverlayService : Service() {
     }
 
     private fun dismissAllOverlays() {
+        dismissQuickPreview()
         dismissTranslationPopup()
         if (floatingBadgeView != null) {
             try {
