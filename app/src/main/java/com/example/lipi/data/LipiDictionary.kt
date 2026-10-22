@@ -21,7 +21,31 @@ object LipiDictionary {
         "story", "post", "like", "comment", "share", "profile", "inbox", "dm",
         "wait", "waiting", "done", "sure", "busy", "free", "send", "sent", "text",
         "msg", "typing", "late", "ready", "online", "offline", "group", "admin",
-        "block", "unblock", "join", "gym", "coffee", "party", "pic", "photo"
+        "block", "unblock", "join", "gym", "coffee", "party", "pic", "photo",
+        "tap", "learn", "more", "security", "changed", "change", "with", "your",
+        "you", "see", "view", "read", "unread", "deleted", "encrypted", "encryption",
+        "privacy", "settings", "terms", "policy", "support", "help", "info", "account"
+    )
+
+    // Standard English vocabulary to detect when a message is pure English (not Banglish)
+    val STANDARD_ENGLISH_WORDS = setOf(
+        "the", "be", "to", "of", "and", "a", "in", "that", "have", "i", "it", "for",
+        "not", "on", "with", "he", "as", "you", "do", "at", "this", "but", "his",
+        "by", "from", "they", "we", "say", "her", "she", "or", "an", "will", "my",
+        "one", "all", "would", "there", "their", "what", "so", "up", "out", "if",
+        "about", "who", "get", "which", "go", "me", "when", "make", "can", "like",
+        "time", "no", "just", "him", "know", "take", "people", "into", "year", "your",
+        "good", "some", "could", "them", "see", "other", "than", "then", "now", "look",
+        "only", "come", "its", "over", "think", "also", "back", "after", "use", "two",
+        "how", "our", "work", "first", "well", "way", "even", "new", "want", "because",
+        "any", "these", "give", "day", "most", "us", "security", "code", "changed",
+        "tap", "learn", "more", "message", "messages", "deleted", "encrypted",
+        "encryption", "calling", "missed", "call", "calls", "chat", "chats",
+        "view", "unread", "sent", "received", "today", "yesterday", "tomorrow",
+        "account", "verify", "password", "settings", "notifications", "notification",
+        "privacy", "terms", "policy", "update", "download", "install", "open", "close",
+        "cancel", "confirm", "continue", "please", "thank", "thanks", "welcome",
+        "congratulations", "happy", "birthday", "morning", "night", "evening"
     )
 
     // Common Banglish words mapped to precise, high-accuracy Bengali script

@@ -5,6 +5,7 @@ import com.example.lipi.engine.BanglishPhoneticEngine
 import com.example.lipi.engine.BengaliSpellDoctor
 import com.example.lipi.engine.MixedScriptTokenizer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -28,6 +29,19 @@ class ExampleUnitTest {
         // User's reported phrase: "Sobai wait korche, sob thik thak ache to? ❤️"
         val res = MixedScriptTokenizer.process("Sobai wait korche, sob thik thak ache to? ❤️", LipiMode.SMART_AUTO)
         assertEquals("সবাই wait করছে, সব ঠিক থাক আছে তো? ❤️", res.convertedText)
+    }
+
+    @Test
+    fun testEnglishSystemNotificationPreservation() {
+        // User's reported problem: "Your security code with Akash changed. Tap to learn more."
+        val engMsg = "Your security code with Akash changed. Tap to learn more."
+
+        // Must not be flagged as Banglish
+        assertFalse(MixedScriptTokenizer.hasBanglishContent(engMsg))
+
+        // Must be preserved intact in SMART_AUTO mode
+        val res = MixedScriptTokenizer.process(engMsg, LipiMode.SMART_AUTO)
+        assertEquals(engMsg, res.convertedText)
     }
 
     @Test
