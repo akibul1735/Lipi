@@ -24,6 +24,13 @@ class ExampleUnitTest {
     }
 
     @Test
+    fun testUserSpecificFeedbackPhrase() {
+        // User's reported phrase: "Sobai wait korche, sob thik thak ache to? ❤️"
+        val res = MixedScriptTokenizer.process("Sobai wait korche, sob thik thak ache to? ❤️", LipiMode.SMART_AUTO)
+        assertEquals("সবাই wait করছে, সব ঠিক থাক আছে তো? ❤️", res.convertedText)
+    }
+
+    @Test
     fun testBengaliSpellingCorrection() {
         // User's explicit prompt example: "আমি ভাল আছি" → "আমি ভালো আছি"
         val spellResult = BengaliSpellDoctor.checkAndCorrect("আমি ভাল আছি")

@@ -21,8 +21,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
-import android.widget.FrameLayout
-import android.widget.ImageButton
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -31,13 +30,14 @@ import com.example.MainActivity
 import com.example.lipi.engine.MixedScriptTokenizer
 
 /**
- * Native Android Floating Overlay Service.
- * Manages the floating action badge positioned near detected Banglish messages,
- * and handles the tap-to-expand translation popover.
+ * Native Android Floating Overlay Assistant Service.
+ * Provides a persistent draggable floating badge ('ল') over WhatsApp, Messenger, etc.
+ * Supports auto-translating copied text from any messaging app and on-tap conversion popover.
  */
 class LipiOverlayService : Service() {
 
     companion object {
+        const val ACTION_START_ASSISTANT = "com.example.lipi.action.START_ASSISTANT"
         const val ACTION_SHOW_BADGE = "com.example.lipi.action.SHOW_BADGE"
         const val ACTION_DISMISS = "com.example.lipi.action.DISMISS"
         const val EXTRA_DETECTED_TEXT = "extra_detected_text"
@@ -52,12 +52,23 @@ class LipiOverlayService : Service() {
     private var translationPopupView: View? = null
     private var currentText: String = ""
     private var convertedBengali: String = ""
+    private var clipboardManager: ClipboardManager? = null
+
+    private var lastBadgeX = 60
+    private var lastBadgeY = 300
+
+    private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
+        checkClipboardForBanglish()
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        clipboardManager?.addPrimaryClipChangedListener(clipboardListener)
+
         startForegroundServiceWithNotification()
     }
 
@@ -82,7 +93,7 @@ class LipiOverlayService : Service() {
 
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("লিপি (Lipi) সক্রিয় আছে")
-            .setContentText("মেসেজিং অ্যাপে বাংলিশ বার্তা শনাক্ত করার জন্য প্রস্তুত")
+            .setContentText("হোয়াটসঅ্যাপ/মেসেঞ্জারের ওপর ভাসমান সহকারী প্রস্তুত")
             .setSmallIcon(android.R.drawable.ic_menu_edit)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -92,75 +103,143 @@ class LipiOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent == null) return START_NOT_STICKY
-
-        if (intent.action == ACTION_DISMISS) {
-            dismissAllOverlays()
-            stopSelf()
-            return START_NOT_STICKY
+        if (intent == null) {
+            ensureFloatingBadgeVisible()
+            return START_STICKY
         }
 
-        if (intent.action == ACTION_SHOW_BADGE) {
-            val text = intent.getStringExtra(EXTRA_DETECTED_TEXT) ?: return START_NOT_STICKY
-            val x = intent.getIntExtra(EXTRA_BOUNDS_X, 300)
-            val y = intent.getIntExtra(EXTRA_BOUNDS_Y, 400)
-            handleDetectedText(text, x, y)
+        when (intent.action) {
+            ACTION_DISMISS -> {
+                dismissAllOverlays()
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_SHOW_BADGE -> {
+                val text = intent.getStringExtra(EXTRA_DETECTED_TEXT)
+                if (!text.isNullOrBlank()) {
+                    val x = intent.getIntExtra(EXTRA_BOUNDS_X, 300)
+                    val y = intent.getIntExtra(EXTRA_BOUNDS_Y, 400)
+                    handleDetectedText(text, x, y)
+                } else {
+                    ensureFloatingBadgeVisible()
+                }
+            }
+            ACTION_START_ASSISTANT -> {
+                ensureFloatingBadgeVisible()
+            }
+            else -> {
+                ensureFloatingBadgeVisible()
+            }
         }
 
         return START_STICKY
     }
 
-    private fun handleDetectedText(text: String, posX: Int, posY: Int) {
-        if (!Settings.canDrawOverlays(this)) {
-            return
+    private fun checkClipboardForBanglish() {
+        try {
+            val clip = clipboardManager?.primaryClip?.getItemAt(0)?.text?.toString() ?: return
+            if (clip.isNotBlank() && MixedScriptTokenizer.hasBanglishContent(clip)) {
+                currentText = clip
+                convertedBengali = MixedScriptTokenizer.process(clip).convertedText
+                Toast.makeText(this, "লিপি: কপি করা মেসেজ অনুবাদের জন্য প্রস্তুত ('ল' ট্যাপ করুন)", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
+    }
+
+    private fun handleDetectedText(text: String, posX: Int, posY: Int) {
+        if (!Settings.canDrawOverlays(this)) return
 
         currentText = text
         val conversion = MixedScriptTokenizer.process(text)
         convertedBengali = conversion.convertedText
 
-        showFloatingBadge(posX, posY)
+        lastBadgeX = posX
+        lastBadgeY = posY
+        ensureFloatingBadgeVisible()
     }
 
-    private fun showFloatingBadge(x: Int, y: Int) {
-        if (floatingBadgeView != null) {
-            return // Badge already active
-        }
+    private fun ensureFloatingBadgeVisible() {
+        if (!Settings.canDrawOverlays(this)) return
+        if (floatingBadgeView != null) return // Already visible
 
-        val dpSize = (44 * resources.displayMetrics.density).toInt()
+        val dpSize = (48 * resources.displayMetrics.density).toInt()
         val layoutParams = WindowManager.LayoutParams(
             dpSize,
             dpSize,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
-                WindowManager.LayoutParams.TYPE_PHONE,
+                @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            this.x = x.coerceIn(50, resources.displayMetrics.widthPixels - dpSize - 20)
-            this.y = y.coerceIn(100, resources.displayMetrics.heightPixels - dpSize - 100)
+            x = lastBadgeX.coerceIn(20, resources.displayMetrics.widthPixels - dpSize - 20)
+            y = lastBadgeY.coerceIn(100, resources.displayMetrics.heightPixels - dpSize - 100)
         }
 
         val badge = TextView(this).apply {
             text = "ল"
-            textSize = 20f
+            textSize = 22f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(0xFF0F5161.toInt()) // Padma Teal
-                setStroke((2 * resources.displayMetrics.density).toInt(), 0xFF00A896.toInt())
+                setStroke((2.5f * resources.displayMetrics.density).toInt(), 0xFF00A896.toInt())
             }
-            elevation = 12f
+            elevation = 16f
         }
 
-        // Click on badge opens the translation popup
-        badge.setOnClickListener {
-            showTranslationPopup(layoutParams.x, layoutParams.y)
-        }
+        // Draggable touch listener
+        badge.setOnTouchListener(object : View.OnTouchListener {
+            private var initialX = 0
+            private var initialY = 0
+            private var initialTouchX = 0f
+            private var initialTouchY = 0f
+            private var isClick = false
+
+            override fun onTouch(v: View?, event: MotionEvent?): Boolean {
+                if (event == null) return false
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        initialX = layoutParams.x
+                        initialY = layoutParams.y
+                        initialTouchX = event.rawX
+                        initialTouchY = event.rawY
+                        isClick = true
+                        return true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = (event.rawX - initialTouchX).toInt()
+                        val dy = (event.rawY - initialTouchY).toInt()
+                        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                            isClick = false
+                        }
+                        layoutParams.x = initialX + dx
+                        layoutParams.y = initialY + dy
+                        try {
+                            windowManager?.updateViewLayout(badge, layoutParams)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                        return true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (isClick) {
+                            lastBadgeX = layoutParams.x
+                            lastBadgeY = layoutParams.y
+                            onBadgeClicked(layoutParams.x, layoutParams.y)
+                        }
+                        return true
+                    }
+                }
+                return false
+            }
+        })
 
         floatingBadgeView = badge
         try {
@@ -170,23 +249,38 @@ class LipiOverlayService : Service() {
         }
     }
 
-    private fun showTranslationPopup(anchorX: Int, anchorY: Int) {
-        if (translationPopupView != null) return
+    private fun onBadgeClicked(anchorX: Int, anchorY: Int) {
+        // If we don't have text yet, check clipboard
+        if (currentText.isBlank()) {
+            val clipText = clipboardManager?.primaryClip?.getItemAt(0)?.text?.toString()
+            if (!clipText.isNullOrBlank()) {
+                currentText = clipText
+                convertedBengali = MixedScriptTokenizer.process(clipText).convertedText
+            }
+        }
+        showTranslationPopup(anchorX, anchorY)
+    }
 
-        val width = (300 * resources.displayMetrics.density).toInt()
+    private fun showTranslationPopup(anchorX: Int, anchorY: Int) {
+        if (translationPopupView != null) {
+            dismissTranslationPopup()
+            return
+        }
+
+        val width = (320 * resources.displayMetrics.density).toInt()
         val layoutParams = WindowManager.LayoutParams(
             width,
             WindowManager.LayoutParams.WRAP_CONTENT,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
-                WindowManager.LayoutParams.TYPE_PHONE,
+                @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            this.x = (anchorX - width + 60).coerceIn(20, resources.displayMetrics.widthPixels - width - 20)
-            this.y = (anchorY + 60).coerceIn(100, resources.displayMetrics.heightPixels - 300)
+            x = (anchorX - width + 80).coerceIn(20, resources.displayMetrics.widthPixels - width - 20)
+            y = (anchorY + 60).coerceIn(100, resources.displayMetrics.heightPixels - 350)
         }
 
         val container = LinearLayout(this).apply {
@@ -197,7 +291,7 @@ class LipiOverlayService : Service() {
                 setColor(0xFF0C1518.toInt()) // Deep surface
                 setStroke(2, 0xFF00A896.toInt())
             }
-            elevation = 16f
+            elevation = 20f
         }
 
         val headerRow = LinearLayout(this).apply {
@@ -206,9 +300,9 @@ class LipiOverlayService : Service() {
         }
 
         val title = TextView(this).apply {
-            text = "লিপি অনুবাদ (বাংলা)"
+            text = "লিপি অনুবাদ সহকারী"
             setTextColor(0xFF57DFCE.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
 
@@ -216,16 +310,14 @@ class LipiOverlayService : Service() {
             text = "✕"
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.TRANSPARENT)
-            setOnClickListener {
-                dismissTranslationPopup()
-            }
+            setOnClickListener { dismissTranslationPopup() }
         }
 
         headerRow.addView(title)
         headerRow.addView(closeBtn)
 
         val translationText = TextView(this).apply {
-            text = convertedBengali
+            text = if (convertedBengali.isNotBlank()) convertedBengali else "কোনো টেক্সট পাওয়া যায়নি। কোনো মেসেজ কপি করে 'ল' বাটনে চাপুন।"
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setLineSpacing(8f, 1.2f)
@@ -237,22 +329,48 @@ class LipiOverlayService : Service() {
             gravity = Gravity.END
         }
 
+        val pasteAndTranslateBtn = Button(this).apply {
+            text = "পেস্ট করুন"
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                cornerRadius = 14f
+                setColor(0xFF0F5161.toInt())
+            }
+            setOnClickListener {
+                val clipText = clipboardManager?.primaryClip?.getItemAt(0)?.text?.toString()
+                if (!clipText.isNullOrBlank()) {
+                    currentText = clipText
+                    convertedBengali = MixedScriptTokenizer.process(clipText).convertedText
+                    translationText.text = convertedBengali
+                } else {
+                    Toast.makeText(this@LipiOverlayService, "ক্লিপবোর্ড খালি", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
         val copyBtn = Button(this).apply {
             text = "কপি করুন"
             setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
-                cornerRadius = 16f
+                cornerRadius = 14f
                 setColor(0xFFD86B43.toInt()) // Terracotta
             }
             setOnClickListener {
-                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val clip = ClipData.newPlainText("Bengali Translation", convertedBengali)
-                clipboard.setPrimaryClip(clip)
-                Toast.makeText(this@LipiOverlayService, "বাংলা লেখা কপি করা হয়েছে!", Toast.LENGTH_SHORT).show()
-                dismissTranslationPopup()
+                if (convertedBengali.isNotBlank()) {
+                    val clip = ClipData.newPlainText("Bengali Translation", convertedBengali)
+                    clipboardManager?.setPrimaryClip(clip)
+                    Toast.makeText(this@LipiOverlayService, "বাংলা অনুবাদ কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                    dismissTranslationPopup()
+                }
             }
         }
 
+        val spacer = View(this).apply {
+            setLayoutParams(LinearLayout.LayoutParams(16, 0))
+        }
+
+        actionRow.addView(pasteAndTranslateBtn)
+        actionRow.addView(spacer)
         actionRow.addView(copyBtn)
 
         container.addView(headerRow)
@@ -292,6 +410,7 @@ class LipiOverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        clipboardManager?.removePrimaryClipChangedListener(clipboardListener)
         dismissAllOverlays()
     }
 }

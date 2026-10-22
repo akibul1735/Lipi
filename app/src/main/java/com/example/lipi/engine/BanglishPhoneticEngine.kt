@@ -64,16 +64,16 @@ object BanglishPhoneticEngine {
         's' to "স", 'h' to "হ", 'y' to "য়", 'w' to "ও"
     )
 
-    // Capital letter nuances (e.g. T -> ট, D -> ড, R -> ড়, N -> ণ, S -> ষ)
+    // Capital letter nuances (e.g. T -> ট, D -> ড, R -> ড়, N -> ণ)
     private val CASE_CONSONANTS = mapOf(
-        'T' to "ট", 'D' to "ড", 'R' to "ড়", 'N' to "ণ", 'S' to "ষ", 'Y' to "য়"
+        'T' to "ট", 'D' to "ড", 'R' to "ড়", 'N' to "ণ", 'Y' to "য়"
     )
 
     // Independent initial vowels
     private val INITIAL_VOWELS = listOf(
         "aee" to "ঐ", "aou" to "ঔ", "oi" to "ঐ", "ou" to "ঔ",
         "aa" to "আ", "ee" to "ঈ", "oo" to "ঊ",
-        "a" to "অ", "i" to "ই", "u" to "উ", "e" to "এ", "o" to "ও"
+        "a" to "আ", "i" to "ই", "u" to "উ", "e" to "এ", "o" to "অ"
     )
 
     // Dependent vowel signs (কার / Matras) after consonants
