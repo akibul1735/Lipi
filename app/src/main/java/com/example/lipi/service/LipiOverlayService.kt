@@ -13,6 +13,8 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -28,7 +30,7 @@ import com.example.lipi.engine.MixedScriptTokenizer
 /**
  * Native Android Floating Overlay Assistant Service.
  * Provides a persistent draggable floating badge ('ল') over WhatsApp, Messenger, etc.
- * Runs as a standard background service with WindowManager overlay to ensure 100% compatibility across Android 8 through 15 without foreground service crashes.
+ * Supports interactive popup with reliable Paste and Copy functionality.
  */
 class LipiOverlayService : Service() {
 
@@ -107,7 +109,7 @@ class LipiOverlayService : Service() {
 
     private fun checkClipboardForBanglish() {
         try {
-            val clip = clipboardManager?.primaryClip?.getItemAt(0)?.text?.toString() ?: return
+            val clip = clipboardManager?.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() ?: return
             if (clip.isNotBlank() && MixedScriptTokenizer.hasBanglishContent(clip)) {
                 currentText = clip
                 convertedBengali = MixedScriptTokenizer.process(clip).convertedText
@@ -135,7 +137,6 @@ class LipiOverlayService : Service() {
     private fun ensureFloatingBadgeVisible() {
         if (!Settings.canDrawOverlays(this)) return
         if (floatingBadgeView != null) {
-            // Already visible, ensure it's not hidden
             floatingBadgeView?.visibility = View.VISIBLE
             return
         }
@@ -217,7 +218,6 @@ class LipiOverlayService : Service() {
                             lastBadgeY = layoutParams.y
                             onBadgeClicked(layoutParams.x, layoutParams.y)
                         } else {
-                            // Snap gently to nearest screen edge (left or right)
                             val screenWidth = displayMetrics.widthPixels
                             layoutParams.x = if (layoutParams.x + dpSize / 2 < screenWidth / 2) {
                                 16
@@ -246,18 +246,19 @@ class LipiOverlayService : Service() {
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            mainHandler.post {
-                Toast.makeText(this, "ভাসমান বল তৈরি করা যায়নি: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
-            }
         }
     }
 
     private fun onBadgeClicked(anchorX: Int, anchorY: Int) {
-        // Check clipboard for any latest copied text
-        val clipText = clipboardManager?.primaryClip?.getItemAt(0)?.text?.toString()
-        if (!clipText.isNullOrBlank() && (currentText.isBlank() || clipText != currentText)) {
-            currentText = clipText
-            convertedBengali = MixedScriptTokenizer.process(clipText).convertedText
+        // Read latest clipboard if available
+        try {
+            val clipText = clipboardManager?.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()
+            if (!clipText.isNullOrBlank()) {
+                currentText = clipText
+                convertedBengali = MixedScriptTokenizer.process(clipText).convertedText
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
         showTranslationPopup(anchorX, anchorY)
     }
@@ -277,12 +278,12 @@ class LipiOverlayService : Service() {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
                 @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL, // Allow focus so clipboard paste/copy works on Android 10+
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = (anchorX - width + 80).coerceIn(20, displayMetrics.widthPixels - width - 20)
-            y = (anchorY + 60).coerceIn(100, displayMetrics.heightPixels - 350)
+            y = (anchorY + 60).coerceIn(100, displayMetrics.heightPixels - 420)
         }
 
         val container = LinearLayout(this).apply {
@@ -318,19 +319,60 @@ class LipiOverlayService : Service() {
         headerRow.addView(title)
         headerRow.addView(closeBtn)
 
-        val translationText = TextView(this).apply {
-            text = if (convertedBengali.isNotBlank()) convertedBengali else "কোনো টেক্সট পাওয়া যায়নি। মেসেজ কপি করে 'ল' বাটনে চাপুন অথবা নিচের 'পেস্ট করুন' চাপুন।"
+        // Editable Input Field for writing or pasting
+        val inputField = EditText(this).apply {
+            hint = "বাংলিশ মেসেজ লিখুন বা পেস্ট করুন..."
+            setHintTextColor(0xFF888888.toInt())
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            setLineSpacing(8f, 1.2f)
-            setPadding(0, 16, 0, 18)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setPadding(24, 18, 24, 18)
+            background = GradientDrawable().apply {
+                cornerRadius = 14f
+                setColor(0xFF142226.toInt())
+                setStroke(2, 0xFF0F5161.toInt())
+            }
+            if (currentText.isNotBlank()) {
+                setText(currentText)
+            }
         }
+
+        // Live Translated Output Display
+        val translationText = TextView(this).apply {
+            text = if (convertedBengali.isNotBlank())
+                convertedBengali
+            else if (currentText.isNotBlank())
+                MixedScriptTokenizer.process(currentText).convertedText
+            else
+                "এখানে বাংলা অনুবাদ দৃশ্যমান হবে..."
+            setTextColor(0xFF57DFCE.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setLineSpacing(6f, 1.2f)
+            setPadding(0, 14, 0, 16)
+        }
+
+        // Real-time transliteration as user types
+        inputField.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                val input = s?.toString() ?: ""
+                currentText = input
+                if (input.isNotBlank()) {
+                    convertedBengali = MixedScriptTokenizer.process(input).convertedText
+                    translationText.text = convertedBengali
+                } else {
+                    convertedBengali = ""
+                    translationText.text = "এখানে বাংলা অনুবাদ দৃশ্যমান হবে..."
+                }
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
 
         val actionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
         }
 
+        // Paste & Translate Button
         val pasteAndTranslateBtn = Button(this).apply {
             text = "পেস্ট করুন"
             setTextColor(Color.WHITE)
@@ -339,17 +381,34 @@ class LipiOverlayService : Service() {
                 setColor(0xFF0F5161.toInt())
             }
             setOnClickListener {
-                val clipText = clipboardManager?.primaryClip?.getItemAt(0)?.text?.toString()
+                val clipText = try {
+                    if (clipboardManager?.hasPrimaryClip() == true) {
+                        clipboardManager?.primaryClip?.getItemAt(0)?.coerceToText(this@LipiOverlayService)?.toString()
+                    } else null
+                } catch (e: Exception) {
+                    null
+                }
+
                 if (!clipText.isNullOrBlank()) {
+                    inputField.setText(clipText)
                     currentText = clipText
                     convertedBengali = MixedScriptTokenizer.process(clipText).convertedText
                     translationText.text = convertedBengali
+                    Toast.makeText(this@LipiOverlayService, "লেখা পেস্ট ও রূপান্তর হয়েছে!", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(this@LipiOverlayService, "ক্লিপবোর্ড খালি", Toast.LENGTH_SHORT).show()
+                    val typed = inputField.text.toString()
+                    if (typed.isNotBlank()) {
+                        convertedBengali = MixedScriptTokenizer.process(typed).convertedText
+                        translationText.text = convertedBengali
+                        Toast.makeText(this@LipiOverlayService, "রূপান্তর সম্পন্ন হয়েছে!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this@LipiOverlayService, "ক্লিপবোর্ডে কোনো লেখা পাওয়া যায়নি।", Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
 
+        // Copy Translated Bengali Button
         val copyBtn = Button(this).apply {
             text = "কপি করুন"
             setTextColor(Color.WHITE)
@@ -358,11 +417,23 @@ class LipiOverlayService : Service() {
                 setColor(0xFFD86B43.toInt()) // Terracotta
             }
             setOnClickListener {
-                if (convertedBengali.isNotBlank()) {
-                    val clip = ClipData.newPlainText("Bengali Translation", convertedBengali)
-                    clipboardManager?.setPrimaryClip(clip)
-                    Toast.makeText(this@LipiOverlayService, "বাংলা অনুবাদ কপি হয়েছে!", Toast.LENGTH_SHORT).show()
-                    dismissTranslationPopup()
+                val textToCopy = if (convertedBengali.isNotBlank()) {
+                    convertedBengali
+                } else if (inputField.text.isNotBlank()) {
+                    MixedScriptTokenizer.process(inputField.text.toString()).convertedText
+                } else ""
+
+                if (textToCopy.isNotBlank()) {
+                    try {
+                        val clip = ClipData.newPlainText("Bengali Translation", textToCopy)
+                        clipboardManager?.setPrimaryClip(clip)
+                        Toast.makeText(this@LipiOverlayService, "বাংলা অনুবাদ কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                        dismissTranslationPopup()
+                    } catch (e: Exception) {
+                        Toast.makeText(this@LipiOverlayService, "কপি ব্যর্থ হয়েছে: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Toast.makeText(this@LipiOverlayService, "কপি করার মতো কোনো বাংলা লেখা নেই।", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -375,7 +446,12 @@ class LipiOverlayService : Service() {
         actionRow.addView(spacer)
         actionRow.addView(copyBtn)
 
+        val spacerMiddle = View(this).apply {
+            setLayoutParams(LinearLayout.LayoutParams(0, 12))
+        }
+
         container.addView(headerRow)
+        container.addView(inputField)
         container.addView(translationText)
         container.addView(actionRow)
 

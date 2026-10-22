@@ -249,25 +249,42 @@ fun StudioScreen(
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    Row {
-                        // Paste button
-                        IconButton(
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Prominent Paste Button with Label
+                        OutlinedButton(
                             onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = clipboard.primaryClip?.getItemAt(0)?.text?.toString()
-                                if (!clip.isNullOrBlank()) {
-                                    viewModel.updateInput(clip)
+                                try {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = if (clipboard.hasPrimaryClip()) {
+                                        clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
+                                    } else null
+
+                                    if (!clip.isNullOrBlank()) {
+                                        viewModel.updateInput(clip)
+                                        Toast.makeText(context, "লেখা পেস্ট করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "ক্লিপবোর্ডে কোনো লেখা পাওয়া যায়নি। আগে কোনো মেসেজ কপি করুন।", Toast.LENGTH_LONG).show()
+                                    }
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "পেস্ট ব্যর্থ হয়েছে: ${e.message}", Toast.LENGTH_SHORT).show()
                                 }
                             },
-                            modifier = Modifier.size(36.dp).testTag("paste_button")
+                            modifier = Modifier.testTag("paste_button"),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            shape = RoundedCornerShape(8.dp)
                         ) {
                             Icon(
                                 Icons.Default.ContentPaste,
                                 contentDescription = "পেস্ট করুন",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(16.dp)
                             )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("পেস্ট করুন", fontSize = 12.sp)
                         }
+
                         if (inputText.isNotBlank()) {
                             IconButton(
                                 onClick = { viewModel.updateInput("") },
@@ -277,7 +294,7 @@ fun StudioScreen(
                                     Icons.Default.Clear,
                                     contentDescription = "মুছুন",
                                     tint = MaterialTheme.colorScheme.outline,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
@@ -336,10 +353,18 @@ fun StudioScreen(
         OutputResultCard(
             result = currentResult,
             onCopy = {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val clip = ClipData.newPlainText("Lipi Result", currentResult.convertedText)
-                clipboard.setPrimaryClip(clip)
-                Toast.makeText(context, "লেখা ক্লিপবোর্ডে কপি করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                if (currentResult.convertedText.isNotBlank()) {
+                    try {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("Lipi Result", currentResult.convertedText)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "বাংলা অনুবাদ সফলভাবে কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "কপি ব্যর্থ হয়েছে: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Toast.makeText(context, "কপি করার মতো কোনো বাংলা লেখা নেই। আগে কিছু লিখুন বা পেস্ট করুন।", Toast.LENGTH_LONG).show()
+                }
             },
             onShare = {
                 val intent = Intent(Intent.ACTION_SEND).apply {
