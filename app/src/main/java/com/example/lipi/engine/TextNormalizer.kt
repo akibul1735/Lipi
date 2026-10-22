@@ -106,9 +106,13 @@ object TextNormalizer {
         // For colon, only add space if not part of a URL protocol (like https:// or http://)
         result = result.replace(Regex("""(:)(?!\/\/|\d|\s)([^\s\d।?!,;:\"'\)\]\}])"""), "$1 $2")
 
-        // Bengali verb + "না" separation
-        for ((joined, separated) in BENGALI_VERB_NA_PAIRS) {
-            result = result.replace(Regex("""\b$joined\b"""), separated)
+        // Bengali verb + "না" separation (fast guard to save CPU cycles)
+        if (result.contains("না")) {
+            for ((joined, separated) in BENGALI_VERB_NA_PAIRS) {
+                if (result.contains(joined)) {
+                    result = result.replace(Regex("""\b$joined\b"""), separated)
+                }
+            }
         }
 
         return result

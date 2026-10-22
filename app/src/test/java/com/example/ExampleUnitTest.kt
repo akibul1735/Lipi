@@ -146,4 +146,26 @@ class ExampleUnitTest {
         val spellCheck = BengaliSpellDoctor.checkAndCorrect("নতুন পোষ্ট ও আবিস্কার")
         assertEquals("নতুন পোস্ট ও আবিষ্কার", spellCheck.correctedText)
     }
+
+    @Test
+    fun testBengaliToBanglishReverseTransliteration() {
+        // Reverse Option: বাংলা - বাংলিশ
+        val res1 = MixedScriptTokenizer.process("আমি ভালো আছি", LipiMode.BENGALI_TO_BANGLISH)
+        assertEquals("ami bhalo achi", res1.convertedText)
+
+        val res2 = MixedScriptTokenizer.process("তুমি কেমন আছো?", LipiMode.BENGALI_TO_BANGLISH)
+        assertEquals("tumi kemon acho?", res2.convertedText)
+
+        val res3 = MixedScriptTokenizer.process("কালকে দেখা হবে।", LipiMode.BENGALI_TO_BANGLISH)
+        assertEquals("kalke dekha hobe.", res3.convertedText)
+
+        val res4 = MixedScriptTokenizer.process("কোনো সমস্যা নেই, পরে কথা হবে", LipiMode.BENGALI_TO_BANGLISH)
+        assertEquals("kono shomossha nei, pore kotha hobe", res4.convertedText)
+
+        val res5 = MixedScriptTokenizer.process("ধন্যবাদ বন্ধু!", LipiMode.BENGALI_TO_BANGLISH)
+        assertEquals("dhonnobad bondhu!", res5.convertedText)
+
+        val res6 = MixedScriptTokenizer.process("৫০০ টাকা পাঠিয়ে দাও", LipiMode.BENGALI_TO_BANGLISH)
+        assertEquals("500 taka pathiye dao", res6.convertedText)
+    }
 }

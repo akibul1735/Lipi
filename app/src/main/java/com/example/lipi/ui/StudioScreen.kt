@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Spellcheck
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -98,8 +99,9 @@ fun StudioScreen(
     val samplePhrases = listOf(
         "Ami valo asi",
         "Tumi kemon acho?",
+        "আমি ভালো আছি, তুমি কেমন আছো?",
+        "কালকে সকালে মিটিং আছে",
         "Ajke ki korba?",
-        "আমি ভাল আছি",
         "অসুস্হ মানুষটি হাসপাতালে ভর্তি",
         "Meeting er zoom link pathao please"
     )
@@ -267,7 +269,11 @@ fun StudioScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (selectedMode == LipiMode.SPELL_DOCTOR) "বাংলা টেক্সট লিখুন:" else "বাংলিশ / মিশ্র টেক্সট লিখুন:",
+                        text = when (selectedMode) {
+                            LipiMode.BENGALI_TO_BANGLISH -> "বাংলা টেক্সট লিখুন (বাংলা → বাংলিশ):"
+                            LipiMode.SPELL_DOCTOR -> "বাংলা টেক্সট লিখুন (বানান ডাক্তার):"
+                            else -> "বাংলিশ / মিশ্র টেক্সট লিখুন (বাংলিশ → বাংলা):"
+                        },
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
@@ -335,10 +341,11 @@ fun StudioScreen(
                         .testTag("workbench_input_field"),
                     placeholder = {
                         Text(
-                            text = if (selectedMode == LipiMode.SPELL_DOCTOR)
-                                "যেমন: আমি ভাল আছি, কিন্তু তিনি উপস্থিত ছিলেন না..."
-                            else
-                                "যেমন: Ami valo asi, tumi kemon acho? Ajke 5pm e call dao..."
+                            text = when (selectedMode) {
+                                LipiMode.BENGALI_TO_BANGLISH -> "যেমন: আমি ভালো আছি, তুমি কেমন আছো? কালকে দেখা হবে..."
+                                LipiMode.SPELL_DOCTOR -> "যেমন: আমি ভাল আছি, কিন্তু তিনি উপস্থিত ছিলেন না..."
+                                else -> "যেমন: Ami valo asi, tumi kemon acho? Ajke 5pm e call dao..."
+                            }
                         )
                     },
                     colors = OutlinedTextFieldDefaults.colors(
@@ -363,12 +370,50 @@ fun StudioScreen(
                         color = MaterialTheme.colorScheme.outline
                     )
                     Text(
-                        text = if (selectedMode == LipiMode.SPELL_DOCTOR) "বাংলা বানান ডাক্তার সক্রিয়" else "তাৎক্ষণিক রূপান্তর",
+                        text = when (selectedMode) {
+                            LipiMode.BENGALI_TO_BANGLISH -> "বাংলা → বাংলিশ রূপান্তর সক্রিয়"
+                            LipiMode.SPELL_DOCTOR -> "বাংলা বানান ডাক্তার সক্রিয়"
+                            else -> "তাৎক্ষণিক রূপান্তর"
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.secondary,
                         fontWeight = FontWeight.Medium
                     )
                 }
+            }
+        }
+
+        // Quick Language Swap / Reverse Action Bar
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { viewModel.swapLanguages() }
+                .testTag("swap_languages_button"),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+            tonalElevation = 2.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SwapHoriz,
+                    contentDescription = "বাংলা ⇄ বাংলিশ বিপরীত রূপান্তর",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (selectedMode == LipiMode.BENGALI_TO_BANGLISH)
+                        "বর্তমান মোড: বাংলা → বাংলিশ (ট্যাপ করে বাংলিশ → বাংলা করুন)"
+                    else
+                        "বাংলা ⇄ বাংলিশ বিপরীত রূপান্তর (Reverse Swap)",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
 
@@ -381,12 +426,14 @@ fun StudioScreen(
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         val clip = ClipData.newPlainText("Lipi Result", currentResult.convertedText)
                         clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, "বাংলা অনুবাদ সফলভাবে কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                        val copyToast = if (currentResult.modeUsed == LipiMode.BENGALI_TO_BANGLISH) "বাংলিশ ফলাফল সফলভাবে কপি হয়েছে!" else "বাংলা অনুবাদ সফলভাবে কপি হয়েছে!"
+                        Toast.makeText(context, copyToast, Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
                         Toast.makeText(context, "কপি ব্যর্থ হয়েছে: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
                 } else {
-                    Toast.makeText(context, "কপি করার মতো কোনো বাংলা লেখা নেই। আগে কিছু লিখুন বা পেস্ট করুন।", Toast.LENGTH_LONG).show()
+                    val emptyToast = if (currentResult.modeUsed == LipiMode.BENGALI_TO_BANGLISH) "কপি করার মতো কোনো বাংলিশ লেখা নেই।" else "কপি করার মতো কোনো বাংলা লেখা নেই। আগে কিছু লিখুন বা পেস্ট করুন।"
+                    Toast.makeText(context, emptyToast, Toast.LENGTH_LONG).show()
                 }
             },
             onShare = {
@@ -426,7 +473,9 @@ fun ModeSelectorCard(
             )
             Spacer(modifier = Modifier.height(10.dp))
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 LipiMode.values().forEach { mode ->
@@ -445,6 +494,7 @@ fun ModeSelectorCard(
                             Icon(
                                 imageVector = when (mode) {
                                     LipiMode.BANGLISH_TO_BENGALI -> Icons.Default.Language
+                                    LipiMode.BENGALI_TO_BANGLISH -> Icons.Default.SwapHoriz
                                     LipiMode.SPELL_DOCTOR -> Icons.Default.Spellcheck
                                     LipiMode.SMART_AUTO -> Icons.Default.AutoAwesome
                                 },
@@ -457,7 +507,7 @@ fun ModeSelectorCard(
                             selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
                             selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary
                         ),
-                        modifier = Modifier.weight(1f).testTag("mode_${mode.name}")
+                        modifier = Modifier.testTag("mode_${mode.name}")
                     )
                 }
             }
@@ -492,32 +542,36 @@ fun OutputResultCard(
                             .size(28.dp)
                             .clip(CircleShape)
                             .background(
-                                if (result.modeUsed == LipiMode.SPELL_DOCTOR)
-                                    TerracottaSecondary.copy(alpha = 0.2f)
-                                else
-                                    CyanAccent.copy(alpha = 0.2f)
+                                when (result.modeUsed) {
+                                    LipiMode.BENGALI_TO_BANGLISH -> MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                    LipiMode.SPELL_DOCTOR -> TerracottaSecondary.copy(alpha = 0.2f)
+                                    else -> CyanAccent.copy(alpha = 0.2f)
+                                }
                             ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = if (result.modeUsed == LipiMode.SPELL_DOCTOR)
-                                Icons.Default.HealthAndSafety
-                            else
-                                Icons.Default.AutoAwesome,
+                            imageVector = when (result.modeUsed) {
+                                LipiMode.BENGALI_TO_BANGLISH -> Icons.Default.SwapHoriz
+                                LipiMode.SPELL_DOCTOR -> Icons.Default.HealthAndSafety
+                                else -> Icons.Default.AutoAwesome
+                            },
                             contentDescription = null,
-                            tint = if (result.modeUsed == LipiMode.SPELL_DOCTOR)
-                                TerracottaSecondary
-                            else
-                                CyanAccent,
+                            tint = when (result.modeUsed) {
+                                LipiMode.BENGALI_TO_BANGLISH -> MaterialTheme.colorScheme.primary
+                                LipiMode.SPELL_DOCTOR -> TerracottaSecondary
+                                else -> CyanAccent
+                            },
                             modifier = Modifier.size(18.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (result.modeUsed == LipiMode.SPELL_DOCTOR)
-                            "বানান পরীক্ষিত বাংলা স্ক্রিপ্ট"
-                        else
-                            "বাংলা রূপান্তর ফলাফল",
+                        text = when (result.modeUsed) {
+                            LipiMode.BENGALI_TO_BANGLISH -> "বাংলিশ রূপান্তর ফলাফল"
+                            LipiMode.SPELL_DOCTOR -> "বানান পরীক্ষিত বাংলা স্ক্রিপ্ট"
+                            else -> "বাংলা রূপান্তর ফলাফল"
+                        },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface

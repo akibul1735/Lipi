@@ -633,8 +633,77 @@ object LipiDictionary {
     // Common multi-word Banglish phrases from Version 5 Library (longest first)
     val BANGLISH_PHRASES: List<Pair<String, String>> = LipiV5Lexicon.PHRASES
 
-    // Combined lexicon containing complete Version 5 expanded word bank and base words
-    val BANGLISH_LEXICON: Map<String, String> = LipiV5Lexicon.WORD_BANK + BASE_BANGLISH_LEXICON
+    // Memory-efficient combined lexicon without duplicating ~3300 entries in heap RAM
+    val BANGLISH_LEXICON: Map<String, String> = object : AbstractMap<String, String>() {
+        override val entries: Set<Map.Entry<String, String>> by lazy {
+            val combined = HashMap<String, String>(LipiV5Lexicon.WORD_BANK.size + BASE_BANGLISH_LEXICON.size)
+            combined.putAll(LipiV5Lexicon.WORD_BANK)
+            combined.putAll(BASE_BANGLISH_LEXICON)
+            combined.entries
+        }
+        override fun containsKey(key: String): Boolean =
+            BASE_BANGLISH_LEXICON.containsKey(key) || LipiV5Lexicon.WORD_BANK.containsKey(key)
+        override fun get(key: String): String? =
+            BASE_BANGLISH_LEXICON[key] ?: LipiV5Lexicon.WORD_BANK[key]
+    }
+
+    // High-priority colloquial reverse mappings for most natural Banglish output
+    val PREFERRED_BENGALI_TO_BANGLISH: Map<String, String> = mapOf(
+        "আমি" to "ami", "আমরা" to "amra", "আমাকে" to "amake", "আমার" to "amar", "আমাদের" to "amader",
+        "তুমি" to "tumi", "তোমরা" to "tomra", "তোমাকে" to "tomake", "তোমার" to "tomar", "তোমাদের" to "tomader",
+        "তুই" to "tui", "তোরা" to "tora", "তোকে" to "toke", "তোর" to "tor", "তোদের" to "toder",
+        "আপনি" to "apni", "আপনারা" to "apnara", "আপনাকে" to "apnake", "আপনার" to "apnar", "আপনাদের" to "apnader",
+        "সে" to "se", "তারা" to "tara", "তাকে" to "take", "তার" to "tar", "তাদের" to "tader",
+        "তিনি" to "tini", "ইনি" to "ini", "উনি" to "uni", "এটা" to "eta", "ওটা" to "ota",
+        "এই" to "ei", "ওই" to "oi", "সেই" to "shei", "এগুলো" to "egulo", "ওগুলো" to "ogulo",
+        "ভালো" to "bhalo", "ভাল" to "bhalo", "আছি" to "achi", "আছো" to "acho", "আছেন" to "achen", "আছে" to "ache",
+        "কেমন" to "kemon", "কি" to "ki", "কী" to "ki", "কেন" to "keno", "কোথায়" to "kothay", "কখন" to "kokhon",
+        "কিভাবে" to "kibhabe", "কোথাও" to "kothao", "কোন" to "kono", "কোনো" to "kono",
+        "ধন্যবাদ" to "dhonnobad", "স্বাগতম" to "shagotom", "সুন্দর" to "shundor", "বন্ধু" to "bondhu",
+        "ভাই" to "bhai", "বোন" to "bon", "মা" to "ma", "বাবা" to "baba",
+        "আজ" to "aaj", "আজকে" to "ajke", "কাল" to "kal", "কালকে" to "kalke", "গতকাল" to "gotokal", "আগামীকাল" to "agamikal",
+        "সকাল" to "sokal", "সকালে" to "sokale", "দুপুর" to "dupur", "দুপুরে" to "dupure", "বিকাল" to "bikal", "বিকালে" to "bikale",
+        "সন্ধ্যা" to "shondha", "সন্ধ্যায়" to "shondhay", "রাত" to "raat", "রাতে" to "rate",
+        "হ্যাঁ" to "hae", "না" to "na", "নয়" to "noy", "হবে" to "hobe", "হচ্ছে" to "hocche", "হয়েছে" to "hoyeche",
+        "করব" to "korbo", "করবো" to "korbo", "করছি" to "korchi", "করছো" to "korcho", "করছেন" to "korchen", "করেছি" to "korechi",
+        "যাব" to "jabo", "যাবো" to "jabo", "যাচ্ছি" to "jacchi", "যাচ্ছ" to "jaccho", "যাচ্ছেন" to "jachen",
+        "খাব" to "khabo", "খাবো" to "khabo", "খাচ্ছি" to "khacchi", "বলব" to "bolbo", "বলবো" to "bolbo", "বলছি" to "bolchi",
+        "শুনছি" to "shunchi", "দেখছি" to "dekhchi", "দেখব" to "dekhbo", "দেখবো" to "dekhbo",
+        "দেখা" to "dekha", "কথা" to "kotha", "কাজ" to "kaj", "সময়" to "shomoy", "টাকা" to "taka",
+        "ঠিক" to "thik", "একটু" to "ektu", "অনেক" to "onek", "খুব" to "khub", "অল্প" to "olpo",
+        "সমস্যা" to "shomossha", "নাই" to "nai", "নেই" to "nei", "প্যারা" to "pera", "চিল" to "chill",
+        "সবাই" to "sobai", "সব" to "shob", "কিছু" to "kichu", "কোথা" to "kotha", "মানুষ" to "manush",
+        "ফোন" to "phone", "মেসেজ" to "message", "কল" to "call", "লিংক" to "link", "ছবি" to "chobi"
+    )
+
+    // Reverse multi-word phrases (longest first)
+    val REVERSE_PHRASES: List<Pair<String, String>> by lazy {
+        val list = mutableListOf<Pair<String, String>>()
+        for ((banglish, bengali) in LipiV5Lexicon.PHRASES) {
+            list.add(bengali to banglish)
+        }
+        list.sortByDescending { it.first.length }
+        list
+    }
+
+    // Lazy reverse dictionary lookup for Bengali to Banglish
+    val BENGALI_TO_BANGLISH_MAP: Map<String, String> by lazy {
+        val map = HashMap<String, String>(LipiV5Lexicon.WORD_BANK.size + BASE_BANGLISH_LEXICON.size)
+        // 1. Base from WORD_BANK
+        for ((banglish, bengali) in LipiV5Lexicon.WORD_BANK) {
+            val key = bengali.trim()
+            if (!map.containsKey(key)) {
+                map[key] = banglish
+            }
+        }
+        // 2. Overwrite with BASE_BANGLISH_LEXICON
+        for ((banglish, bengali) in BASE_BANGLISH_LEXICON) {
+            map[bengali.trim()] = banglish
+        }
+        // 3. Overwrite with preferred colloquial Banglish spellings
+        map.putAll(PREFERRED_BENGALI_TO_BANGLISH)
+        map
+    }
 
     // Bengali Spelling Correction Dictionary:
     // Maps common Bengali spelling errors to correct standard Bengali with explanation

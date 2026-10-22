@@ -69,6 +69,22 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
         _selectedMode.value = mode
     }
 
+    /**
+     * Swaps the input with the converted output and toggles between Banglish->Bengali and Bengali->Banglish mode.
+     */
+    fun swapLanguages() {
+        val converted = currentResult.value.convertedText
+        val newMode = if (_selectedMode.value == LipiMode.BENGALI_TO_BANGLISH) {
+            LipiMode.BANGLISH_TO_BENGALI
+        } else {
+            LipiMode.BENGALI_TO_BANGLISH
+        }
+        _selectedMode.value = newMode
+        if (converted.isNotBlank()) {
+            _inputText.value = converted
+        }
+    }
+
     fun setFloatingServiceEnabled(enabled: Boolean) {
         repository.setFloatingServiceEnabled(enabled)
     }

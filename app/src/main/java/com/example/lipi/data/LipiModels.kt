@@ -2,6 +2,7 @@ package com.example.lipi.data
 
 enum class LipiMode(val titleBn: String, val subtitleBn: String) {
     BANGLISH_TO_BENGALI("বাংলিশ → বাংলা", "ইংরেজি অক্ষরে লেখা বাংলা শব্দ রূপান্তর"),
+    BENGALI_TO_BANGLISH("বাংলা → বাংলিশ", "বাংলা বর্ণমালার লেখাকে ফোনেটিক বাংলিশে রূপান্তর"),
     SPELL_DOCTOR("বাংলা বানান ডাক্তার", "শুদ্ধ বাংলা বানান ও কার-চিহ্ন সংশোধন"),
     SMART_AUTO("স্মার্ট অটো ডিটেক্ট", "বাংলিশ, বাংলা, ইংরেজি ও ইমোজি স্বয়ংক্রিয় প্রসেসিং")
 }

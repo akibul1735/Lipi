@@ -59,6 +59,7 @@ class LipiOverlayService : Service() {
     private var currentText: String = ""
     private var convertedBengali: String = ""
     private var lastObservedClipText: String = ""
+    private var isReverseMode: Boolean = false
 
     private var clipboardManager: ClipboardManager? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -139,12 +140,18 @@ class LipiOverlayService : Service() {
 
         try {
             val clip = clipboardManager?.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() ?: return
-            if (clip.isNotBlank() && clip != lastObservedClipText && MixedScriptTokenizer.hasBanglishContent(clip)) {
+            val hasBengali = clip.any { it in '\u0980'..'\u09FF' }
+            val hasBanglish = MixedScriptTokenizer.hasBanglishContent(clip)
+
+            if (clip.isNotBlank() && clip != lastObservedClipText && (hasBanglish || hasBengali)) {
                 lastObservedClipText = clip
                 currentText = clip
                 val convertDigits = prefs.getBoolean("convert_digits", false)
+                val isReverse = hasBengali && !hasBanglish
+                val mode = if (isReverse) com.example.lipi.data.LipiMode.BENGALI_TO_BANGLISH else com.example.lipi.data.LipiMode.SMART_AUTO
                 val conversion = MixedScriptTokenizer.process(
                     inputText = clip,
+                    mode = mode,
                     convertDigitsToBengali = convertDigits,
                     transliterationStyle = getTransliterationStyle()
                 )
@@ -164,7 +171,8 @@ class LipiOverlayService : Service() {
                     activeTranslationText?.text = convertedBengali
 
                     // Show sleek quick preview floating card
-                    showQuickPreviewCard(convertedBengali)
+                    val prefix = if (isReverse) "বাংলিশ: " else "বাংলা: "
+                    showQuickPreviewCard(prefix + convertedBengali)
                 }
             }
         } catch (e: Exception) {
@@ -479,8 +487,10 @@ class LipiOverlayService : Service() {
     private fun processText(text: String): String {
         val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
         val convertDigits = prefs.getBoolean("convert_digits", false)
+        val mode = if (isReverseMode) com.example.lipi.data.LipiMode.BENGALI_TO_BANGLISH else com.example.lipi.data.LipiMode.SMART_AUTO
         return MixedScriptTokenizer.process(
             inputText = text,
+            mode = mode,
             convertDigitsToBengali = convertDigits,
             transliterationStyle = getTransliterationStyle()
         ).convertedText
@@ -540,10 +550,18 @@ class LipiOverlayService : Service() {
         }
 
         val title = TextView(this).apply {
-            text = "লিপি অনুবাদ সহকারী"
+            text = if (isReverseMode) "লিপি: বাংলা → বাংলিশ" else "লিপি: বাংলিশ → বাংলা"
             setTextColor(0xFF57DFCE.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+
+        val swapModeBtn = Button(this).apply {
+            text = if (isReverseMode) "বাংলা ⇄ বাংলিশ" else "বাংলিশ ⇄ বাংলা"
+            setTextColor(0xFF57DFCE.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setBackgroundColor(Color.TRANSPARENT)
+            setPadding(12, 6, 12, 6)
         }
 
         val closeBtn = Button(this).apply {
@@ -554,11 +572,12 @@ class LipiOverlayService : Service() {
         }
 
         headerRow.addView(title)
+        headerRow.addView(swapModeBtn)
         headerRow.addView(closeBtn)
 
         // Editable Input Field for writing or pasting
         val inputField = EditText(this).apply {
-            hint = "বাংলিশ মেসেজ লিখুন বা পেস্ট করুন..."
+            hint = if (isReverseMode) "বাংলা মেসেজ লিখুন বা পেস্ট করুন..." else "বাংলিশ মেসেজ লিখুন বা পেস্ট করুন..."
             setHintTextColor(0xFF888888.toInt())
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
@@ -588,6 +607,24 @@ class LipiOverlayService : Service() {
             setPadding(0, 14, 0, 16)
         }
         activeTranslationText = translationText
+
+        swapModeBtn.setOnClickListener {
+            isReverseMode = !isReverseMode
+            swapModeBtn.text = if (isReverseMode) "বাংলা ⇄ বাংলিশ" else "বাংলিশ ⇄ বাংলা"
+            title.text = if (isReverseMode) "লিপি: বাংলা → বাংলিশ" else "লিপি: বাংলিশ → বাংলা"
+            inputField.hint = if (isReverseMode) "বাংলা মেসেজ লিখুন বা পেস্ট করুন..." else "বাংলিশ মেসেজ লিখুন বা পেস্ট করুন..."
+
+            val prevOutput = convertedBengali
+            if (prevOutput.isNotBlank()) {
+                inputField.setText(prevOutput)
+                currentText = prevOutput
+                convertedBengali = processText(prevOutput)
+                translationText.text = convertedBengali
+            } else if (inputField.text.isNotBlank()) {
+                convertedBengali = processText(inputField.text.toString())
+                translationText.text = convertedBengali
+            }
+        }
 
         // Real-time transliteration as user types
         inputField.addTextChangedListener(object : TextWatcher {

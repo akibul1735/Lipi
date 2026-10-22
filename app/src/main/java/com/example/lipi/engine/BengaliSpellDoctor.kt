@@ -18,6 +18,8 @@ object BengaliSpellDoctor {
         val tokenDetails: List<ProcessedToken>
     )
 
+    private val WORD_REGEX = Regex("""([\p{L}\p{M}]+)|([^\p{L}\p{M}\s]+)|(\s+)""")
+
     /**
      * Check and correct Bengali spelling for given input.
      */
@@ -27,8 +29,7 @@ object BengaliSpellDoctor {
         }
 
         // Tokenize by word boundary, preserving punctuation
-        val wordRegex = Regex("""([\p{L}\p{M}]+)|([^\p{L}\p{M}\s]+)|(\s+)""")
-        val matches = wordRegex.findAll(bengaliText)
+        val matches = WORD_REGEX.findAll(bengaliText)
 
         val outputBuilder = StringBuilder()
         val tokens = mutableListOf<ProcessedToken>()

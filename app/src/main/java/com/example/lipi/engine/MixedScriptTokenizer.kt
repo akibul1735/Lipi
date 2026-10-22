@@ -85,6 +85,14 @@ object MixedScriptTokenizer {
             return ConversionResult(inputText, inputText, emptyList(), mode, 0)
         }
 
+        // Handle reverse mode: BENGALI_TO_BANGLISH (বাংলা → বাংলিশ)
+        if (mode == LipiMode.BENGALI_TO_BANGLISH) {
+            return BengaliToBanglishEngine.process(
+                inputText = inputText,
+                customWordbook = customWordbook
+            )
+        }
+
         // Handle pure SPELL_DOCTOR mode
         if (mode == LipiMode.SPELL_DOCTOR) {
             val doctorResult = BengaliSpellDoctor.checkAndCorrect(inputText)
@@ -136,6 +144,11 @@ object MixedScriptTokenizer {
         val allPhrases = customPhrases + LipiDictionary.BANGLISH_PHRASES
 
         for ((phrase, bengaliReplacement) in allPhrases) {
+            val spaceIndex = phrase.indexOf(' ')
+            val firstWord = if (spaceIndex > 0) phrase.substring(0, spaceIndex) else phrase
+            // Fast guard: skip regex compilation and matching if first word is not even present in the text
+            if (!stageText.contains(firstWord, ignoreCase = true)) continue
+
             val words = phrase.trim().split(Regex("""\s+""")).filter { it.isNotBlank() }
             if (words.size >= 2) {
                 val phrasePattern = Regex("""(?i)\b""" + words.joinToString("""\s+""") { Regex.escape(it) } + """\b""")
