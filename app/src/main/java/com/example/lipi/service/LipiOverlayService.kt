@@ -518,31 +518,50 @@ class LipiOverlayService : Service() {
 
         val displayMetrics = resources.displayMetrics
         val width = (320 * displayMetrics.density).toInt()
-        val layoutParams = WindowManager.LayoutParams(
-            width,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+
+        // Root overlay covering full screen to intercept outside touches and close the window
+        val rootOverlay = FrameLayout(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            isClickable = true
+            isFocusable = true
+            // Clicking outside the floating dialog immediately closes it
+            setOnClickListener {
+                dismissTranslationPopup()
+            }
+        }
+
+        val windowLayoutParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
                 @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL, // Allow focus so clipboard paste/copy works on Android 10+
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL, // Allow keyboard and focus inside input
             PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = (anchorX - width + 80).coerceIn(20, displayMetrics.widthPixels - width - 20)
-            y = (anchorY + 60).coerceIn(100, displayMetrics.heightPixels - 420)
-        }
+        )
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 24, 32, 24)
+            setPadding(28, 24, 28, 24)
             background = GradientDrawable().apply {
                 cornerRadius = 24f
                 setColor(0xFF0C1518.toInt()) // Deep surface
                 setStroke(2, 0xFF00A896.toInt())
             }
             elevation = 24f
+            // Important: prevent clicks inside the dialog card from dismissing it
+            setOnClickListener { /* consume click */ }
         }
+
+        val cardLayoutParams = FrameLayout.LayoutParams(
+            width,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            leftMargin = (anchorX - width + 80).coerceIn(20, displayMetrics.widthPixels - width - 20)
+            topMargin = (anchorY + 60).coerceIn(100, displayMetrics.heightPixels - 460)
+        }
+        container.layoutParams = cardLayoutParams
 
         val headerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -552,16 +571,9 @@ class LipiOverlayService : Service() {
         val title = TextView(this).apply {
             text = if (isReverseMode) "লিপি: বাংলা → বাংলিশ" else "লিপি: বাংলিশ → বাংলা"
             setTextColor(0xFF57DFCE.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTypeface(null, android.graphics.Typeface.BOLD)
             setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        }
-
-        val swapModeBtn = Button(this).apply {
-            text = if (isReverseMode) "বাংলা ⇄ বাংলিশ" else "বাংলিশ ⇄ বাংলা"
-            setTextColor(0xFF57DFCE.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            setBackgroundColor(Color.TRANSPARENT)
-            setPadding(12, 6, 12, 6)
         }
 
         val closeBtn = Button(this).apply {
@@ -572,7 +584,6 @@ class LipiOverlayService : Service() {
         }
 
         headerRow.addView(title)
-        headerRow.addView(swapModeBtn)
         headerRow.addView(closeBtn)
 
         // Editable Input Field for writing or pasting
@@ -599,8 +610,10 @@ class LipiOverlayService : Service() {
                 convertedBengali
             else if (currentText.isNotBlank())
                 processText(currentText)
+            else if (isReverseMode)
+                "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..."
             else
-                "এখানে বাংলা অনুবাদ দৃশ্যমান হবে..."
+                "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
             setTextColor(0xFF57DFCE.toInt())
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setLineSpacing(6f, 1.2f)
@@ -608,23 +621,109 @@ class LipiOverlayService : Service() {
         }
         activeTranslationText = translationText
 
-        swapModeBtn.setOnClickListener {
-            isReverseMode = !isReverseMode
-            swapModeBtn.text = if (isReverseMode) "বাংলা ⇄ বাংলিশ" else "বাংলিশ ⇄ বাংলা"
-            title.text = if (isReverseMode) "লিপি: বাংলা → বাংলিশ" else "লিপি: বাংলিশ → বাংলা"
-            inputField.hint = if (isReverseMode) "বাংলা মেসেজ লিখুন বা পেস্ট করুন..." else "বাংলিশ মেসেজ লিখুন বা পেস্ট করুন..."
+        // Modern Segmented Mode Toggle Button: [ বাংলিশ → বাংলা | বাংলা → বাংলিশ ]
+        val toggleBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(4, 4, 4, 4)
+            background = GradientDrawable().apply {
+                cornerRadius = 14f
+                setColor(0xFF142226.toInt())
+                setStroke(2, 0xFF0F5161.toInt())
+            }
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 8, 0, 14)
+            }
+            layoutParams = params
+        }
 
-            val prevOutput = convertedBengali
-            if (prevOutput.isNotBlank()) {
-                inputField.setText(prevOutput)
-                currentText = prevOutput
-                convertedBengali = processText(prevOutput)
-                translationText.text = convertedBengali
-            } else if (inputField.text.isNotBlank()) {
-                convertedBengali = processText(inputField.text.toString())
-                translationText.text = convertedBengali
+        val btnBanglishToBengali = TextView(this).apply {
+            text = "বাংলিশ → বাংলা"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            gravity = Gravity.CENTER
+            setPadding(8, 12, 8, 12)
+            setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+
+        val btnBengaliToBanglish = TextView(this).apply {
+            text = "বাংলা → বাংলিশ"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            gravity = Gravity.CENTER
+            setPadding(8, 12, 8, 12)
+            setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+
+        fun updateToggleAppearance() {
+            if (!isReverseMode) {
+                btnBanglishToBengali.background = GradientDrawable().apply {
+                    cornerRadius = 10f
+                    setColor(0xFF00A896.toInt())
+                }
+                btnBanglishToBengali.setTextColor(Color.WHITE)
+                btnBanglishToBengali.setTypeface(null, android.graphics.Typeface.BOLD)
+
+                btnBengaliToBanglish.setBackgroundColor(Color.TRANSPARENT)
+                btnBengaliToBanglish.setTextColor(0xFF8BA2A8.toInt())
+                btnBengaliToBanglish.setTypeface(null, android.graphics.Typeface.NORMAL)
+
+                title.text = "লিপি: বাংলিশ → বাংলা"
+                inputField.hint = "বাংলিশ মেসেজ লিখুন বা পেস্ট করুন..."
+                if (convertedBengali.isBlank()) {
+                    translationText.text = "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
+                }
+            } else {
+                btnBengaliToBanglish.background = GradientDrawable().apply {
+                    cornerRadius = 10f
+                    setColor(0xFF00A896.toInt())
+                }
+                btnBengaliToBanglish.setTextColor(Color.WHITE)
+                btnBengaliToBanglish.setTypeface(null, android.graphics.Typeface.BOLD)
+
+                btnBanglishToBengali.setBackgroundColor(Color.TRANSPARENT)
+                btnBanglishToBengali.setTextColor(0xFF8BA2A8.toInt())
+                btnBanglishToBengali.setTypeface(null, android.graphics.Typeface.NORMAL)
+
+                title.text = "লিপি: বাংলা → বাংলিশ"
+                inputField.hint = "বাংলা মেসেজ লিখুন বা পেস্ট করুন..."
+                if (convertedBengali.isBlank()) {
+                    translationText.text = "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..."
+                }
             }
         }
+        updateToggleAppearance()
+
+        btnBanglishToBengali.setOnClickListener {
+            if (isReverseMode) {
+                isReverseMode = false
+                updateToggleAppearance()
+                val prevOutput = convertedBengali
+                if (prevOutput.isNotBlank()) {
+                    inputField.setText(prevOutput)
+                    currentText = prevOutput
+                }
+                convertedBengali = processText(inputField.text.toString())
+                translationText.text = if (convertedBengali.isNotBlank()) convertedBengali else "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
+            }
+        }
+
+        btnBengaliToBanglish.setOnClickListener {
+            if (!isReverseMode) {
+                isReverseMode = true
+                updateToggleAppearance()
+                val prevOutput = convertedBengali
+                if (prevOutput.isNotBlank()) {
+                    inputField.setText(prevOutput)
+                    currentText = prevOutput
+                }
+                convertedBengali = processText(inputField.text.toString())
+                translationText.text = if (convertedBengali.isNotBlank()) convertedBengali else "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..."
+            }
+        }
+
+        toggleBar.addView(btnBanglishToBengali)
+        toggleBar.addView(btnBengaliToBanglish)
 
         // Real-time transliteration as user types
         inputField.addTextChangedListener(object : TextWatcher {
@@ -637,7 +736,7 @@ class LipiOverlayService : Service() {
                     translationText.text = convertedBengali
                 } else {
                     convertedBengali = ""
-                    translationText.text = "এখানে বাংলা অনুবাদ দৃশ্যমান হবে..."
+                    translationText.text = if (isReverseMode) "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..." else "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
                 }
             }
             override fun afterTextChanged(s: Editable?) {}
@@ -684,7 +783,7 @@ class LipiOverlayService : Service() {
             }
         }
 
-        // Copy Translated Bengali Button
+        // Copy Translated Button
         val copyBtn = Button(this).apply {
             text = "কপি করুন"
             setTextColor(Color.WHITE)
@@ -701,15 +800,18 @@ class LipiOverlayService : Service() {
 
                 if (textToCopy.isNotBlank()) {
                     try {
-                        val clip = ClipData.newPlainText("Bengali Translation", textToCopy)
+                        val clipLabel = if (isReverseMode) "Banglish Translation" else "Bengali Translation"
+                        val clip = ClipData.newPlainText(clipLabel, textToCopy)
                         clipboardManager?.setPrimaryClip(clip)
-                        Toast.makeText(this@LipiOverlayService, "বাংলা অনুবাদ কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                        val toastMsg = if (isReverseMode) "বাংলিশ লেখা কপি হয়েছে!" else "বাংলা অনুবাদ কপি হয়েছে!"
+                        Toast.makeText(this@LipiOverlayService, toastMsg, Toast.LENGTH_SHORT).show()
                         dismissTranslationPopup()
                     } catch (e: Exception) {
                         Toast.makeText(this@LipiOverlayService, "কপি ব্যর্থ হয়েছে: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
                 } else {
-                    Toast.makeText(this@LipiOverlayService, "কপি করার মতো কোনো বাংলা লেখা নেই।", Toast.LENGTH_SHORT).show()
+                    val emptyMsg = if (isReverseMode) "কপি করার মতো কোনো বাংলিশ লেখা নেই।" else "কপি করার মতো কোনো বাংলা লেখা নেই।"
+                    Toast.makeText(this@LipiOverlayService, emptyMsg, Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -723,13 +825,16 @@ class LipiOverlayService : Service() {
         actionRow.addView(copyBtn)
 
         container.addView(headerRow)
+        container.addView(toggleBar)
         container.addView(inputField)
         container.addView(translationText)
         container.addView(actionRow)
 
-        translationPopupView = container
+        rootOverlay.addView(container)
+        translationPopupView = rootOverlay
+
         try {
-            windowManager?.addView(translationPopupView, layoutParams)
+            windowManager?.addView(translationPopupView, windowLayoutParams)
         } catch (e: Exception) {
             e.printStackTrace()
         }

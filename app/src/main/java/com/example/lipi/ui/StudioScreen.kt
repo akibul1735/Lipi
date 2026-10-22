@@ -60,6 +60,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -182,35 +183,35 @@ fun StudioScreen(
                         )
                     }
                 }
-                Button(
-                    onClick = {
-                        if (!Settings.canDrawOverlays(context)) {
-                            Toast.makeText(context, "অনুমতি দিন: 'Display over other apps' অন করুন", Toast.LENGTH_LONG).show()
-                            val intent = Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:${context.packageName}")
-                            )
-                            try { context.startActivity(intent) } catch (e: Exception) { /* fallback */ }
-                        } else {
-                            val targetState = !(isFloatingEnabled && overlayGranted)
-                            viewModel.setFloatingServiceEnabled(targetState)
-                            val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
-                                action = if (targetState) LipiOverlayService.ACTION_START_ASSISTANT else LipiOverlayService.ACTION_DISMISS
-                            }
-                            try {
-                                context.startService(serviceIntent)
-                                Toast.makeText(context, if (targetState) "ভাসমান 'A ⇄ অ' অনুবাদক বল চালু হয়েছে!" else "ভাসমান বল লুকানো হয়েছে", Toast.LENGTH_SHORT).show()
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isFloatingEnabled && overlayGranted) MaterialTheme.colorScheme.error else PadmaTealPrimary
-                    ),
-                    shape = RoundedCornerShape(10.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(if (isFloatingEnabled && overlayGranted) "লুকান" else "চালু করুন", color = Color.White, fontWeight = FontWeight.Bold)
+                    Switch(
+                        checked = isFloatingEnabled && overlayGranted,
+                        onCheckedChange = { checked ->
+                            if (checked && !Settings.canDrawOverlays(context)) {
+                                Toast.makeText(context, "অনুমতি দিন: 'Display over other apps' অন করুন", Toast.LENGTH_LONG).show()
+                                val intent = Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${context.packageName}")
+                                )
+                                try { context.startActivity(intent) } catch (e: Exception) { /* fallback */ }
+                            } else {
+                                viewModel.setFloatingServiceEnabled(checked)
+                                val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
+                                    action = if (checked) LipiOverlayService.ACTION_START_ASSISTANT else LipiOverlayService.ACTION_DISMISS
+                                }
+                                try {
+                                    context.startService(serviceIntent)
+                                    Toast.makeText(context, if (checked) "ভাসমান 'A ⇄ অ' অনুবাদক বল চালু হয়েছে!" else "ভাসমান বল লুকানো হয়েছে", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        },
+                        modifier = Modifier.testTag("floating_overlay_toggle_switch")
+                    )
                 }
             }
         }

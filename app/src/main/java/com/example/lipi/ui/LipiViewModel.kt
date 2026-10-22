@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
@@ -35,20 +36,28 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
     val customWordbook: StateFlow<List<WordbookEntry>> = repository.customWordbook
     val recentConversions: StateFlow<List<ConversionResult>> = repository.recentConversions
 
-    // Real-time conversion result
+    // Cached map of custom wordbook so keystrokes don't re-allocate thousands of entries
+    val customWordbookMap: StateFlow<Map<String, String>> = repository.customWordbook
+        .map { list -> list.associate { it.banglish.lowercase() to it.bengali } }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            repository.customWordbook.value.associate { it.banglish.lowercase() to it.bengali }
+        )
+
+    // Real-time conversion result (zero map allocations per keystroke)
     val currentResult: StateFlow<ConversionResult> = combine(
         _inputText,
         _selectedMode,
         convertDigitsToBengali,
-        customWordbook,
+        customWordbookMap,
         transliterationStyle
-    ) { text, mode, convertDigits, wordbook, style ->
-        val customMap = wordbook.associate { it.banglish to it.bengali }
+    ) { text, mode, convertDigits, wordMap, style ->
         MixedScriptTokenizer.process(
             inputText = text,
             mode = mode,
             convertDigitsToBengali = convertDigits,
-            customWordbook = customMap,
+            customWordbook = wordMap,
             transliterationStyle = style
         )
     }.stateIn(

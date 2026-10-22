@@ -633,19 +633,8 @@ object LipiDictionary {
     // Common multi-word Banglish phrases from Version 5 Library (longest first)
     val BANGLISH_PHRASES: List<Pair<String, String>> = LipiV5Lexicon.PHRASES
 
-    // Memory-efficient combined lexicon without duplicating ~3300 entries in heap RAM
-    val BANGLISH_LEXICON: Map<String, String> = object : AbstractMap<String, String>() {
-        override val entries: Set<Map.Entry<String, String>> by lazy {
-            val combined = HashMap<String, String>(LipiV5Lexicon.WORD_BANK.size + BASE_BANGLISH_LEXICON.size)
-            combined.putAll(LipiV5Lexicon.WORD_BANK)
-            combined.putAll(BASE_BANGLISH_LEXICON)
-            combined.entries
-        }
-        override fun containsKey(key: String): Boolean =
-            BASE_BANGLISH_LEXICON.containsKey(key) || LipiV5Lexicon.WORD_BANK.containsKey(key)
-        override fun get(key: String): String? =
-            BASE_BANGLISH_LEXICON[key] ?: LipiV5Lexicon.WORD_BANK[key]
-    }
+    // Combined lexicon containing complete Version 5 expanded word bank and base words
+    val BANGLISH_LEXICON: Map<String, String> = LipiV5Lexicon.WORD_BANK + BASE_BANGLISH_LEXICON
 
     // High-priority colloquial reverse mappings for most natural Banglish output
     val PREFERRED_BENGALI_TO_BANGLISH: Map<String, String> = mapOf(
