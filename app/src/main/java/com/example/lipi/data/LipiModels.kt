@@ -47,3 +47,11 @@ data class WordbookEntry(
     val bengali: String,
     val category: String = "কাস্টম"
 )
+
+data class ImportResult(
+    val addedCount: Int,
+    val skippedCount: Int,
+    val totalEntries: Int,
+    val errorMessage: String? = null
+)
+

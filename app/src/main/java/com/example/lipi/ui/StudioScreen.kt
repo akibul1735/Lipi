@@ -69,6 +69,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -138,15 +139,37 @@ fun StudioScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(38.dp)
-                            .background(PadmaTealPrimary, CircleShape),
+                            .size(42.dp)
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(Color(0xFF07232B), Color(0xFF0F5161))
+                                ),
+                                CircleShape
+                            )
+                            .border(1.5.dp, CyanAccent, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("ল", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                "A⇄অ",
+                                color = Color.White,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                "LIPI",
+                                color = CyanAccent,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 7.sp
+                            )
+                        }
                     }
                     Column {
                         Text(
-                            text = "ভাসমান 'ল' বল (মেসেজিং সহকারী)",
+                            text = "ভাসমান 'A ⇄ অ' অনুবাদক বল",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
@@ -174,7 +197,7 @@ fun StudioScreen(
                             }
                             try {
                                 context.startService(serviceIntent)
-                                Toast.makeText(context, if (targetState) "ভাসমান 'ল' বল স্ক্রিনে চালু হয়েছে!" else "ভাসমান বল লুকানো হয়েছে", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, if (targetState) "ভাসমান 'A ⇄ অ' অনুবাদক বল চালু হয়েছে!" else "ভাসমান বল লুকানো হয়েছে", Toast.LENGTH_SHORT).show()
                             } catch (e: Exception) {
                                 e.printStackTrace()
                             }

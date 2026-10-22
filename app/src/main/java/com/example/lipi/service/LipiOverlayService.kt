@@ -23,6 +23,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -150,6 +151,14 @@ class LipiOverlayService : Service() {
                 convertedBengali = conversion.convertedText
 
                 mainHandler.post {
+                    // Pulse the floating badge
+                    floatingBadgeView?.animate()
+                        ?.scaleX(1.18f)?.scaleY(1.18f)
+                        ?.setDuration(120)
+                        ?.withEndAction {
+                            floatingBadgeView?.animate()?.scaleX(1f)?.scaleY(1f)?.setDuration(120)?.start()
+                        }?.start()
+
                     // Update active open popup if user is inside it
                     activeInputField?.setText(currentText)
                     activeTranslationText?.text = convertedBengali
@@ -206,17 +215,60 @@ class LipiOverlayService : Service() {
             y = lastBadgeY.coerceIn(100, displayMetrics.heightPixels - dpSize - 100)
         }
 
-        val badge = TextView(this).apply {
-            text = "ল"
-            textSize = 24f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
+        val badge = FrameLayout(this).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(0xFF0F5161.toInt()) // Padma Teal
-                setStroke((3 * displayMetrics.density).toInt(), 0xFF57DFCE.toInt()) // Teal Glow
+                colors = intArrayOf(0xFF07232B.toInt(), 0xFF0F5161.toInt())
+                gradientType = GradientDrawable.LINEAR_GRADIENT
+                setStroke((2.5f * displayMetrics.density).toInt(), 0xFF57DFCE.toInt()) // Neon Cyan Glow
             }
-            elevation = 20f
+            elevation = 24f
+
+            // Inner Center Content: A⇄অ & LIPI
+            val centerContent = LinearLayout(this@LipiOverlayService).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                val title = TextView(this@LipiOverlayService).apply {
+                    text = "A⇄অ"
+                    textSize = 12.5f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.WHITE)
+                    gravity = Gravity.CENTER
+                }
+                val subtitle = TextView(this@LipiOverlayService).apply {
+                    text = "LIPI"
+                    textSize = 8f
+                    setTextColor(0xFF57DFCE.toInt())
+                    gravity = Gravity.CENTER
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                }
+                addView(title)
+                addView(subtitle)
+            }
+
+            val centerParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.CENTER
+            }
+            addView(centerContent, centerParams)
+
+            // Active Listening Green Indicator Dot
+            val dot = View(this@LipiOverlayService).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(0xFF00E676.toInt()) // Vivid Emerald Active Indicator
+                    setStroke(1, Color.BLACK)
+                }
+            }
+            val dotSize = (9 * displayMetrics.density).toInt()
+            val dotParams = FrameLayout.LayoutParams(dotSize, dotSize).apply {
+                gravity = Gravity.TOP or Gravity.END
+                topMargin = (5 * displayMetrics.density).toInt()
+                rightMargin = (5 * displayMetrics.density).toInt()
+            }
+            addView(dot, dotParams)
         }
 
         // Draggable touch listener
@@ -284,7 +336,7 @@ class LipiOverlayService : Service() {
         try {
             windowManager?.addView(floatingBadgeView, layoutParams)
             mainHandler.post {
-                Toast.makeText(this, "লিপি ভাসমান 'ল' বল স্ক্রিনে দৃশ্যমান হয়েছে!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "লিপি 'A ⇄ অ' অনুবাদক বল স্ক্রিনে দৃশ্যমান হয়েছে!", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -388,9 +440,20 @@ class LipiOverlayService : Service() {
         card.addView(preview)
         card.addView(copyActionBtn)
 
+        card.alpha = 0f
+        card.scaleX = 0.85f
+        card.scaleY = 0.85f
+
         quickPreviewView = card
         try {
             windowManager?.addView(quickPreviewView, layoutParams)
+            card.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(240)
+                .setInterpolator(android.view.animation.OvershootInterpolator(1.2f))
+                .start()
         } catch (e: Exception) {
             e.printStackTrace()
         }

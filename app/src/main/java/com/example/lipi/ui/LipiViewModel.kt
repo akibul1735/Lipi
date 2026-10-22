@@ -100,6 +100,26 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
         }
     }
 
+    fun bulkImportWords(rawText: String, overwrite: Boolean = false): com.example.lipi.data.ImportResult {
+        return repository.bulkImport(rawText, overwrite)
+    }
+
+    fun exportWordsAsText(): String {
+        return repository.exportCustomDataAsText()
+    }
+
+    fun exportWordsAsJson(): String {
+        return repository.exportCustomDataAsJson()
+    }
+
+    fun clearAllCustomWords() {
+        repository.clearCustomWordbook()
+    }
+
+    fun resetWordsToDefault() {
+        repository.resetToDefaultWordbook()
+    }
+
     fun checkSystemPermissions(context: Context) {
         _overlayPermissionGranted.value = Settings.canDrawOverlays(context)
     }

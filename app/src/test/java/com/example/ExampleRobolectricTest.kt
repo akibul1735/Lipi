@@ -31,4 +31,68 @@ class ExampleRobolectricTest {
         assertNotNull(wordbook)
         assertTrue(wordbook.isNotEmpty())
     }
+
+    @Test
+    fun `test bulk import from text lines and export`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = LipiRepository(context)
+        repository.clearCustomWordbook()
+
+        val rawData = """
+            # This is a sample custom dictionary
+            dhonnobad=ধন্যবাদ
+            shagotom,স্বাগতম
+            apni kemon achen:আপনি কেমন আছেন
+            // Another comment
+            meeting=মিটিং
+        """.trimIndent()
+
+        val importResult = repository.bulkImport(rawData, overwrite = true)
+        assertEquals(4, importResult.addedCount)
+        assertEquals(4, repository.customWordbook.value.size)
+
+        // Verify content
+        val exportedText = repository.exportCustomDataAsText()
+        assertTrue(exportedText.contains("dhonnobad=ধন্যবাদ"))
+        assertTrue(exportedText.contains("shagotom=স্বাগতম"))
+        assertTrue(exportedText.contains("apni kemon achen=আপনি কেমন আছেন"))
+        assertTrue(exportedText.contains("meeting=মিটিং"))
+
+        // Verify JSON export
+        val exportedJson = repository.exportCustomDataAsJson()
+        assertTrue(exportedJson.contains("dhonnobad"))
+        assertTrue(exportedJson.contains("ধন্যবাদ"))
+    }
+
+    @Test
+    fun `test bulk import json format`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = LipiRepository(context)
+
+        val jsonInput = """
+            [
+              {"banglish": "pera nai", "bengali": "প্যারা নাই"},
+              {"banglish": "chill koro", "bengali": "চিল করো"}
+            ]
+        """.trimIndent()
+
+        val result = repository.bulkImport(jsonInput, overwrite = true)
+        assertEquals(2, result.addedCount)
+        assertEquals(2, repository.customWordbook.value.size)
+    }
+
+    @Test
+    fun `test single entry addition and removal`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = LipiRepository(context)
+
+        repository.addWordbookEntry("valo theko", "ভালো থেকো", "শুভেচ্ছা")
+        val found = repository.customWordbook.value.find { it.banglish == "valo theko" }
+        assertNotNull(found)
+        assertEquals("ভালো থেকো", found?.bengali)
+
+        repository.removeWordbookEntry(found!!.id)
+        val removed = repository.customWordbook.value.find { it.banglish == "valo theko" }
+        assertTrue(removed == null)
+    }
 }
