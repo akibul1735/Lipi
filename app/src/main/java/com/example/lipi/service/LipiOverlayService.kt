@@ -517,7 +517,8 @@ class LipiOverlayService : Service() {
         }
 
         val displayMetrics = resources.displayMetrics
-        val width = (320 * displayMetrics.density).toInt()
+        // Compact width: 260dp, keeping floating overlay sleek and non-intrusive
+        val width = (260 * displayMetrics.density).toInt().coerceAtMost((displayMetrics.widthPixels * 0.85f).toInt())
 
         // Root overlay covering full screen to intercept outside touches and close the window
         val rootOverlay = FrameLayout(this).apply {
@@ -543,13 +544,13 @@ class LipiOverlayService : Service() {
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 24, 28, 24)
+            setPadding(16, 12, 16, 12)
             background = GradientDrawable().apply {
-                cornerRadius = 24f
+                cornerRadius = 18f
                 setColor(0xFF0C1518.toInt()) // Deep surface
                 setStroke(2, 0xFF00A896.toInt())
             }
-            elevation = 24f
+            elevation = 16f
             // Important: prevent clicks inside the dialog card from dismissing it
             setOnClickListener { /* consume click */ }
         }
@@ -558,8 +559,8 @@ class LipiOverlayService : Service() {
             width,
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
-            leftMargin = (anchorX - width + 80).coerceIn(20, displayMetrics.widthPixels - width - 20)
-            topMargin = (anchorY + 60).coerceIn(100, displayMetrics.heightPixels - 460)
+            leftMargin = (anchorX - width + 60).coerceIn(16, displayMetrics.widthPixels - width - 16)
+            topMargin = (anchorY + 40).coerceIn(60, displayMetrics.heightPixels - 360)
         }
         container.layoutParams = cardLayoutParams
 
@@ -571,32 +572,40 @@ class LipiOverlayService : Service() {
         val title = TextView(this).apply {
             text = if (isReverseMode) "লিপি: বাংলা → বাংলিশ" else "লিপি: বাংলিশ → বাংলা"
             setTextColor(0xFF57DFCE.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setTypeface(null, android.graphics.Typeface.BOLD)
             setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
 
-        val closeBtn = Button(this).apply {
+        val closeBtn = TextView(this).apply {
             text = "✕"
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.TRANSPARENT)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            gravity = Gravity.CENTER
+            setPadding(12, 4, 12, 4)
+            background = GradientDrawable().apply {
+                cornerRadius = 10f
+                setColor(0x25FFFFFF)
+            }
             setOnClickListener { dismissTranslationPopup() }
         }
 
         headerRow.addView(title)
         headerRow.addView(closeBtn)
 
-        // Editable Input Field for writing or pasting
+        // Editable Input Field for writing or pasting (compact height)
         val inputField = EditText(this).apply {
-            hint = if (isReverseMode) "বাংলা মেসেজ লিখুন বা পেস্ট করুন..." else "বাংলিশ মেসেজ লিখুন বা পেস্ট করুন..."
+            hint = if (isReverseMode) "বাংলা লিখুন বা পেস্ট..." else "বাংলিশ লিখুন বা পেস্ট..."
             setHintTextColor(0xFF888888.toInt())
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            setPadding(24, 18, 24, 18)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(12, 8, 12, 8)
+            minLines = 1
+            maxLines = 3
             background = GradientDrawable().apply {
-                cornerRadius = 14f
+                cornerRadius = 10f
                 setColor(0xFF142226.toInt())
-                setStroke(2, 0xFF0F5161.toInt())
+                setStroke(1, 0xFF0F5161.toInt())
             }
             if (currentText.isNotBlank()) {
                 setText(currentText)
@@ -604,7 +613,7 @@ class LipiOverlayService : Service() {
         }
         activeInputField = inputField
 
-        // Live Translated Output Display
+        // Live Translated Output Display in a sleek highlighted box
         val translationText = TextView(this).apply {
             text = if (convertedBengali.isNotBlank())
                 convertedBengali
@@ -615,50 +624,62 @@ class LipiOverlayService : Service() {
             else
                 "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
             setTextColor(0xFF57DFCE.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            setLineSpacing(6f, 1.2f)
-            setPadding(0, 14, 0, 16)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setLineSpacing(3f, 1.15f)
+            setPadding(12, 8, 12, 8)
+            background = GradientDrawable().apply {
+                cornerRadius = 10f
+                setColor(0xFF0F1E22.toInt())
+                setStroke(1, 0xFF00A896.toInt())
+            }
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 6, 0, 8)
+            }
+            layoutParams = params
         }
         activeTranslationText = translationText
 
         // Modern Segmented Mode Toggle Button: [ বাংলিশ → বাংলা | বাংলা → বাংলিশ ]
         val toggleBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(4, 4, 4, 4)
+            setPadding(2, 2, 2, 2)
             background = GradientDrawable().apply {
-                cornerRadius = 14f
+                cornerRadius = 10f
                 setColor(0xFF142226.toInt())
-                setStroke(2, 0xFF0F5161.toInt())
+                setStroke(1, 0xFF0F5161.toInt())
             }
             val params = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, 8, 0, 14)
+                setMargins(0, 4, 0, 8)
             }
             layoutParams = params
         }
 
         val btnBanglishToBengali = TextView(this).apply {
             text = "বাংলিশ → বাংলা"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             gravity = Gravity.CENTER
-            setPadding(8, 12, 8, 12)
+            setPadding(4, 6, 4, 6)
             setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
 
         val btnBengaliToBanglish = TextView(this).apply {
             text = "বাংলা → বাংলিশ"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             gravity = Gravity.CENTER
-            setPadding(8, 12, 8, 12)
+            setPadding(4, 6, 4, 6)
             setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
 
         fun updateToggleAppearance() {
             if (!isReverseMode) {
                 btnBanglishToBengali.background = GradientDrawable().apply {
-                    cornerRadius = 10f
+                    cornerRadius = 8f
                     setColor(0xFF00A896.toInt())
                 }
                 btnBanglishToBengali.setTextColor(Color.WHITE)
@@ -669,13 +690,13 @@ class LipiOverlayService : Service() {
                 btnBengaliToBanglish.setTypeface(null, android.graphics.Typeface.NORMAL)
 
                 title.text = "লিপি: বাংলিশ → বাংলা"
-                inputField.hint = "বাংলিশ মেসেজ লিখুন বা পেস্ট করুন..."
+                inputField.hint = "বাংলিশ লিখুন বা পেস্ট..."
                 if (convertedBengali.isBlank()) {
                     translationText.text = "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
                 }
             } else {
                 btnBengaliToBanglish.background = GradientDrawable().apply {
-                    cornerRadius = 10f
+                    cornerRadius = 8f
                     setColor(0xFF00A896.toInt())
                 }
                 btnBengaliToBanglish.setTextColor(Color.WHITE)
@@ -686,7 +707,7 @@ class LipiOverlayService : Service() {
                 btnBanglishToBengali.setTypeface(null, android.graphics.Typeface.NORMAL)
 
                 title.text = "লিপি: বাংলা → বাংলিশ"
-                inputField.hint = "বাংলা মেসেজ লিখুন বা পেস্ট করুন..."
+                inputField.hint = "বাংলা লিখুন বা পেস্ট..."
                 if (convertedBengali.isBlank()) {
                     translationText.text = "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..."
                 }
@@ -744,17 +765,32 @@ class LipiOverlayService : Service() {
 
         val actionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
+            gravity = Gravity.CENTER_VERTICAL
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 2, 0, 0)
+            }
+            layoutParams = params
         }
 
-        // Paste & Translate Button
-        val pasteAndTranslateBtn = Button(this).apply {
+        val btnHeight = (36 * displayMetrics.density).toInt()
+
+        // 1. Paste Button ("পেস্ট করুন")
+        val pasteBtn = Button(this).apply {
             text = "পেস্ট করুন"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setTextColor(Color.WHITE)
+            setPadding(4, 0, 4, 0)
             background = GradientDrawable().apply {
-                cornerRadius = 14f
-                setColor(0xFF0F5161.toInt())
+                cornerRadius = 10f
+                setColor(0xFF0F5161.toInt()) // Deep teal
             }
+            val p = LinearLayout.LayoutParams(0, btnHeight, 1f).apply {
+                setMargins(0, 0, 3, 0)
+            }
+            layoutParams = p
             setOnClickListener {
                 val clipText = try {
                     if (clipboardManager?.hasPrimaryClip() == true) {
@@ -783,14 +819,47 @@ class LipiOverlayService : Service() {
             }
         }
 
-        // Copy Translated Button
+        // 2. Clear / Erase Button ("মুছুন")
+        val clearBtn = Button(this).apply {
+            text = "মুছুন"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextColor(0xFFFFCDD2.toInt())
+            setPadding(4, 0, 4, 0)
+            background = GradientDrawable().apply {
+                cornerRadius = 10f
+                setColor(0xFF2E383D.toInt()) // Slate dark
+                setStroke(1, 0xFF4F5D65.toInt())
+            }
+            val p = LinearLayout.LayoutParams(0, btnHeight, 1f).apply {
+                setMargins(3, 0, 3, 0)
+            }
+            layoutParams = p
+            setOnClickListener {
+                inputField.setText("")
+                currentText = ""
+                convertedBengali = ""
+                translationText.text = if (isReverseMode)
+                    "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..."
+                else
+                    "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
+                Toast.makeText(this@LipiOverlayService, "লেখা মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // 3. Copy Button ("কপি করুন")
         val copyBtn = Button(this).apply {
             text = "কপি করুন"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setTextColor(Color.WHITE)
+            setPadding(4, 0, 4, 0)
             background = GradientDrawable().apply {
-                cornerRadius = 14f
+                cornerRadius = 10f
                 setColor(0xFFD86B43.toInt()) // Terracotta
             }
+            val p = LinearLayout.LayoutParams(0, btnHeight, 1f).apply {
+                setMargins(3, 0, 0, 0)
+            }
+            layoutParams = p
             setOnClickListener {
                 val textToCopy = if (convertedBengali.isNotBlank()) {
                     convertedBengali
@@ -816,12 +885,8 @@ class LipiOverlayService : Service() {
             }
         }
 
-        val spacer = View(this).apply {
-            setLayoutParams(LinearLayout.LayoutParams(16, 0))
-        }
-
-        actionRow.addView(pasteAndTranslateBtn)
-        actionRow.addView(spacer)
+        actionRow.addView(pasteBtn)
+        actionRow.addView(clearBtn)
         actionRow.addView(copyBtn)
 
         container.addView(headerRow)
