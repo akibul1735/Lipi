@@ -267,20 +267,32 @@ fun SettingsScreen(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-                // Permission Item 2: Accessibility
-                PermissionStatusRow(
-                    title = "অ্যাক্সেসিবিলিটি সার্ভিস (Accessibility Service)",
-                    description = "স্ক্রিনে থাকা বাংলিশ টেক্সট শনাক্ত করার জন্য প্রয়োজন। বার্তা সংরক্ষণ করা হয় না।",
-                    isGranted = accessibilityEnabled,
-                    onActionClick = {
-                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                        try {
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "অ্যাক্সেসিবিলিটি সেটিংস খোলা যাচ্ছে না", Toast.LENGTH_SHORT).show()
-                        }
+                // Play Protect Safe Mode Notice
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = "Safe Mode",
+                        tint = Color(0xFF00A896),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "প্লে প্রোটেক্ট নিরাপদ মোড (Play Protect Safe)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "সংবেদনশীল পারমিশন ছাড়াই নিরাপদ ভাসমান 'ল' বল এবং কপি-পেস্ট অনুবাদের মাধ্যমে কাজ করে। কোনো ইনস্টলেশন ব্লক নেই।",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                )
+                }
             }
         }
 
