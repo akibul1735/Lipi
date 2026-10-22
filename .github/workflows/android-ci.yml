@@ -1,4 +1,4 @@
-name: Android CI
+name: Android CI (Release Build)
 
 on:
   push:
@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: Build & Test
+    name: Test & Build Release APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -33,13 +33,12 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x gradlew
 
-      - name: Restore Debug Keystore & Environment
+      - name: Restore Keystores & Environment
         run: |
           if [ -f "debug.keystore.base64" ]; then
             echo "Restoring debug.keystore from debug.keystore.base64..."
             base64 -d debug.keystore.base64 > debug.keystore
           elif [ ! -f "debug.keystore" ]; then
-            echo "Generating debug.keystore with keytool..."
             keytool -genkeypair -v -keystore debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass "android" -keypass "android" -dname "CN=Android Debug,O=Android,C=US"
           fi
@@ -58,12 +57,32 @@ jobs:
           path: app/build/reports/tests/testDebugUnitTest/
           retention-days: 7
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Prepare Release Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Decoding release keystore from secrets..."
+            echo "$KEYSTORE_BASE64" | base64 -d > my-upload-key.jks
+          elif [ -f "my-upload-key.jks" ]; then
+            echo "Found existing my-upload-key.jks..."
+          else
+            echo "Generating release signing key for CI..."
+            keytool -genkeypair -v -keystore my-upload-key.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "android" -keypass "android" -dname "CN=Lipi, OU=Lipi, O=Lipi, L=Dhaka, C=BD"
+          fi
 
-      - name: Upload Debug APK
+      - name: Build Release APK
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || 'android' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
+        run: |
+          ./gradlew assembleRelease --no-daemon --stacktrace
+          cp app/build/outputs/apk/release/app-release.apk lipi_release.apk || cp app/build/outputs/apk/release/*.apk lipi_release.apk
+
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: lipi-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          retention-days: 14
+          name: lipi_release.apk
+          path: lipi_release.apk
+          retention-days: 30

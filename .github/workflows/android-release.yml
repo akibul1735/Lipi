@@ -5,21 +5,14 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      build_bundle:
-        description: 'Build Android App Bundle (.aab)'
-        required: true
-        type: boolean
-        default: true
-      build_apk:
-        description: 'Build Release APK (.apk)'
-        required: true
-        type: boolean
-        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-release:
-    name: Build & Package Release
+    name: Build Release APK
     runs-on: ubuntu-latest
     timeout-minutes: 35
 
@@ -39,13 +32,12 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x gradlew
 
-      - name: Restore Debug Keystore & Environment
+      - name: Restore Keystores & Environment
         run: |
           if [ -f "debug.keystore.base64" ]; then
             echo "Restoring debug.keystore from debug.keystore.base64..."
             base64 -d debug.keystore.base64 > debug.keystore
           elif [ ! -f "debug.keystore" ]; then
-            echo "Generating debug.keystore with keytool..."
             keytool -genkeypair -v -keystore debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass "android" -keypass "android" -dname "CN=Android Debug,O=Android,C=US"
           fi
@@ -61,48 +53,33 @@ jobs:
             echo "Decoding release keystore from secrets..."
             echo "$KEYSTORE_BASE64" | base64 -d > my-upload-key.jks
           elif [ -f "my-upload-key.jks" ]; then
-            echo "Found local my-upload-key.jks..."
+            echo "Found existing my-upload-key.jks..."
           else
-            echo "Generating fallback signing key for CI build..."
+            echo "Generating release signing key for CI..."
             keytool -genkeypair -v -keystore my-upload-key.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass "android" -keypass "android" -dname "CN=Lipi, OU=Lipi, O=Lipi, L=Dhaka, C=BD"
           fi
 
       - name: Build Release APK
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_apk }}
         env:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || 'android' }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+        run: |
+          ./gradlew assembleRelease --no-daemon --stacktrace
+          cp app/build/outputs/apk/release/app-release.apk lipi_release.apk || cp app/build/outputs/apk/release/*.apk lipi_release.apk
 
-      - name: Build Android App Bundle (AAB)
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_bundle }}
-        env:
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || 'android' }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
-        run: ./gradlew bundleRelease --no-daemon --stacktrace
-
-      - name: Upload Release APK Artifact
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: lipi-release-apk
-          path: app/build/outputs/apk/release/*.apk
-          retention-days: 30
-
-      - name: Upload Release AAB Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lipi-release-aab
-          path: app/build/outputs/bundle/release/*.aab
+          name: lipi_release.apk
+          path: lipi_release.apk
           retention-days: 30
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
+          files: lipi_release.apk
           draft: false
           prerelease: false
           generate_release_notes: true
