@@ -36,8 +36,23 @@
 
         <!-- Lipi Floating Overlay Window Service -->
         <service
-            android:name=".service.LipiOverlayService"
+            android:name=".lipi.service.LipiOverlayService"
             android:exported="false" />
+
+        <!-- Lipi Accessibility Service: this registration was missing, so the app never
+             appeared in Settings > Accessibility and could never read chat messages. -->
+        <service
+            android:name=".lipi.service.LipiAccessibilityService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
 
     </application>
 

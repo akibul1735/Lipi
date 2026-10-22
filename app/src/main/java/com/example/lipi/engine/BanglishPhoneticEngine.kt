@@ -3,20 +3,30 @@ package com.example.lipi.engine
 import com.example.lipi.data.LipiDictionary
 
 /**
- * Robust Avro-compatible phonetic transliteration engine for Banglish -> Bengali script.
- * Converts arbitrary phonetic Bengali written in English letters.
+ * Avro-style phonetic transliteration engine for Banglish -> Bengali script.
+ *
+ * Fixes over the previous version:
+ *  - 'o' after a consonant is the inherent vowel (ekhon -> এখন, ghor -> ঘর); only a word-final
+ *    'o' becomes ো (korbo -> করবো, bolo -> বলো).
+ *  - "chh" -> ছ was missing; 'x' and 'q' were missing.
+ *  - A capitalised first letter / ALL-CAPS word (typical in chats) is treated as normal text,
+ *    so "Tumi" is no longer read as ট+ুমি. Capitals inside a word (baRi, TaKa) still pick
+ *    the retroflex letters (ড়, ট ...), including "Th" -> ঠ and "Dh" -> ঢ.
+ *  - Conjunct patterns that usually cross a syllable boundary (mr, hr, nr, sr, jr, bd, gd, lk)
+ *    were removed, so amra -> আমরা and kalke -> কালকে.
+ *  - Suffix handling covers more endings (ke, ra, der, guli, ti, ei ...).
  */
 object BanglishPhoneticEngine {
 
-    // Multi-character consonant patterns sorted by length descending
+    // Multi-character consonant patterns, longest first.
     private val CONJUNCT_PATTERNS = listOf(
         // 4 chars
         "kkhy" to "ক্ষ্য",
         "cchh" to "চ্ছ",
         "shth" to "ষ্ঠ",
         "shch" to "শ্চ",
-        "shpr" to "ষ্প্র",
         // 3 chars
+        "chh" to "ছ",
         "kkh" to "ক্ষ",
         "cch" to "চ্ছ",
         "jjh" to "জ্ঝ",
@@ -32,7 +42,6 @@ object BanglishPhoneticEngine {
         "shp" to "ষ্প",
         "sht" to "ষ্ট",
         "sth" to "স্থ",
-        "spr" to "স্প্র",
         "str" to "স্ত্র",
         "bhr" to "ভ্র",
         "dhr" to "ধ্র",
@@ -42,188 +51,194 @@ object BanglishPhoneticEngine {
         "thr" to "থ্র",
         // 2 chars
         "kk" to "ক্ক", "kt" to "ক্ত", "kh" to "খ",
-        "gg" to "জ্ঞ", "gd" to "গ্দ", "gh" to "ঘ",
+        "gg" to "জ্ঞ", "gh" to "ঘ",
         "ch" to "চ", "jh" to "ঝ",
         "tt" to "ত্ত", "tn" to "ত্ন", "tm" to "ত্ম", "tr" to "ত্র", "th" to "থ",
         "dd" to "দ্দ", "dm" to "দ্ম", "dh" to "ধ",
         "nt" to "ন্ত", "nd" to "ন্দ", "nn" to "ন্ন",
         "pt" to "প্ত", "pn" to "প্ন", "pp" to "প্প", "pr" to "প্র", "ph" to "ফ",
-        "bd" to "ব্ধ", "bb" to "ব্ব", "br" to "ব্র", "bh" to "ভ",
-        "mn" to "ম্ন", "mp" to "ম্প", "mb" to "ম্ব", "mm" to "ম্ম", "mr" to "ম্র",
-        "ll" to "ল্ল", "lp" to "ল্প", "lk" to "ল্ক",
+        "bb" to "ব্ব", "br" to "ব্র", "bh" to "ভ",
+        "mn" to "ম্ন", "mp" to "ম্প", "mb" to "ম্ব", "mm" to "ম্ম",
+        "ll" to "ল্ল", "lp" to "ল্প",
         "sh" to "শ", "ss" to "ষ", "sp" to "স্প", "sk" to "স্ক", "st" to "স্ত", "sn" to "স্ন", "sm" to "স্ম",
-        "kr" to "ক্র", "gr" to "গ্র", "jr" to "জ্র", "dr" to "দ্র", "nr" to "ন্র", "sr" to "স্র", "hr" to "হ্র",
+        "kr" to "ক্র", "gr" to "গ্র", "dr" to "দ্র",
         "ng" to "ং"
     )
 
-    // Single consonants
     private val SINGLE_CONSONANTS = mapOf(
         'k' to "ক", 'g' to "গ", 'c' to "চ", 'j' to "জ", 't' to "ত",
         'd' to "দ", 'n' to "ন", 'p' to "প", 'f' to "ফ", 'b' to "ব",
         'v' to "ভ", 'm' to "ম", 'z' to "জ", 'r' to "র", 'l' to "ল",
-        's' to "স", 'h' to "হ", 'y' to "য়", 'w' to "ও"
+        's' to "স", 'h' to "হ", 'y' to "য়", 'w' to "ও", 'x' to "ক্স", 'q' to "ক"
     )
 
-    // Capital letter nuances (e.g. T -> ট, D -> ড, R -> ড়, N -> ণ)
+    // Capital letters inside a word select the retroflex / special forms.
     private val CASE_CONSONANTS = mapOf(
-        'T' to "ট", 'D' to "ড", 'R' to "ড়", 'N' to "ণ", 'Y' to "য়"
+        'T' to "ট", 'D' to "ড", 'R' to "ড়", 'N' to "ণ", 'Y' to "য়"
     )
 
-    // Independent initial vowels
     private val INITIAL_VOWELS = listOf(
         "aee" to "ঐ", "aou" to "ঔ", "oi" to "ঐ", "ou" to "ঔ",
         "aa" to "আ", "ee" to "ঈ", "oo" to "ঊ",
         "a" to "আ", "i" to "ই", "u" to "উ", "e" to "এ", "o" to "অ"
     )
 
-    // Dependent vowel signs (কার / Matras) after consonants
     private val VOWEL_MATRAS = listOf(
         "aee" to "ৈ", "aou" to "ৌ", "oi" to "ৈ", "ou" to "ৌ",
         "aa" to "া", "ee" to "ী", "oo" to "ূ",
         "a" to "া", "i" to "ি", "u" to "ু", "e" to "ে", "o" to "ো"
     )
 
-    /**
-     * Transliterate a single Banglish word to Bengali.
-     */
+    private val SUFFIXES = listOf(
+        "gulo" to "গুলো", "guli" to "গুলি", "der" to "দের", "er" to "ের", "ke" to "কে",
+        "ra" to "রা", "te" to "তে", "ta" to "টা", "ti" to "টি", "ei" to "েই"
+    )
+
+    private const val VOWEL_SIGNS = "ািীুূেৈোৌ"
+    private const val VOWEL_LETTERS = "অআইঈউঊএঐওঔ"
+
+    /** Transliterate a single Banglish word to Bengali. */
     fun transliterateWord(rawWord: String, customMap: Map<String, String> = emptyMap()): String {
         if (rawWord.isBlank()) return rawWord
 
         val cleaned = rawWord.trim()
         val lower = cleaned.lowercase()
 
-        // 1. Check custom user wordbook first
-        customMap[lower]?.let { return matchCasingOrPreserve(cleaned, it) }
+        // 1. User wordbook
+        customMap[lower]?.let { return it }
 
-        // 2. Check rich dictionary lookup
+        // 2. Built-in lexicon
         LipiDictionary.BANGLISH_LEXICON[lower]?.let { return it }
 
-        // 3. Check common grammar suffixes (e.g. "amake", "tomader", "ami-o", "valo-i")
-        val strippedSuffix = checkCommonSuffix(lower)
-        if (strippedSuffix != null) {
-            return strippedSuffix
-        }
+        // 3. Lexicon stem + common suffix
+        checkCommonSuffix(lower)?.let { return it }
 
-        // 4. Algorithmic State-Machine Transliteration
-        return parsePhoneticLetters(cleaned)
+        // 4. Phonetic state machine
+        return parsePhoneticLetters(normalizeCase(cleaned))
+    }
+
+    /**
+     * "Tumi" (sentence start) and "KORO" (shouting) are ordinary text, not retroflex hints.
+     * Mixed-case words such as "baRi" or "TaKa" are left alone.
+     */
+    private fun normalizeCase(word: String): String {
+        if (word.length < 2) return word.lowercase()
+        if (word.all { !it.isLetter() || it.isUpperCase() }) return word.lowercase()
+        if (word[0].isUpperCase() && word.drop(1).none { it.isUpperCase() }) return word.lowercase()
+        return word
     }
 
     private fun checkCommonSuffix(lower: String): String? {
-        // e.g. "te" -> "তে", "er" -> "এর", "gulo" -> "গুলো", "ta" -> "টা"
-        if (lower.endsWith("er") && lower.length > 3) {
-            val stem = lower.substring(0, lower.length - 2)
-            LipiDictionary.BANGLISH_LEXICON[stem]?.let { return "${it}ের" }
-        }
-        if (lower.endsWith("te") && lower.length > 3) {
-            val stem = lower.substring(0, lower.length - 2)
-            LipiDictionary.BANGLISH_LEXICON[stem]?.let { return "${it}তে" }
-        }
-        if (lower.endsWith("gulo") && lower.length > 5) {
-            val stem = lower.substring(0, lower.length - 4)
-            LipiDictionary.BANGLISH_LEXICON[stem]?.let { return "${it}গুলো" }
-        }
-        if (lower.endsWith("ta") && lower.length > 3) {
-            val stem = lower.substring(0, lower.length - 2)
-            LipiDictionary.BANGLISH_LEXICON[stem]?.let { return "${it}টা" }
+        for ((suffix, bn) in SUFFIXES) {
+            if (lower.length > suffix.length + 1 && lower.endsWith(suffix)) {
+                val stem = LipiDictionary.BANGLISH_LEXICON[lower.dropLast(suffix.length)] ?: continue
+                return attachSuffix(stem, bn)
+            }
         }
         return null
+    }
+
+    private fun attachSuffix(stem: String, suffix: String): String {
+        val last = stem.last()
+        val endsWithVowel = VOWEL_SIGNS.indexOf(last) >= 0 || VOWEL_LETTERS.indexOf(last) >= 0
+        // "ের" / "েই" after a vowel lose their leading ে (বাবা + ের -> বাবার)
+        return if (suffix.startsWith("ে") && endsWithVowel) stem + suffix.substring(1) else stem + suffix
     }
 
     private fun parsePhoneticLetters(input: String): String {
         val result = StringBuilder()
         var i = 0
-        var isAfterConsonant = false
+        var afterConsonant = false
         val len = input.length
 
         while (i < len) {
-            val sub = input.substring(i)
+            val ch = input[i]
 
-            // 1. Try matching multi-char conjuncts
-            var matchedConjunct: String? = null
+            // 1. Retroflex / special capitals (keeps Th -> ঠ, Dh -> ঢ)
+            if (CASE_CONSONANTS.containsKey(ch)) {
+                when {
+                    ch == 'T' && input.startsWith("Th", i) -> { result.append("ঠ"); i += 2 }
+                    ch == 'D' && input.startsWith("Dh", i) -> { result.append("ঢ"); i += 2 }
+                    else -> { result.append(CASE_CONSONANTS[ch]); i += 1 }
+                }
+                afterConsonant = true
+                continue
+            }
+
+            // 2. Multi-character consonant patterns
+            var conjunct: String? = null
             var conjunctLen = 0
             for ((pat, bn) in CONJUNCT_PATTERNS) {
-                if (sub.startsWith(pat, ignoreCase = true)) {
-                    matchedConjunct = bn
+                if (input.startsWith(pat, i, ignoreCase = true)) {
+                    conjunct = bn
                     conjunctLen = pat.length
                     break
                 }
             }
-
-            if (matchedConjunct != null) {
-                result.append(matchedConjunct)
+            if (conjunct != null) {
+                result.append(conjunct)
                 i += conjunctLen
-                isAfterConsonant = true
+                afterConsonant = true
                 continue
             }
 
-            // 2. Try case-sensitive specific consonants (T -> ট, D -> ড, R -> ড়, N -> ণ, S -> ষ)
-            val charAt = input[i]
-            if (CASE_CONSONANTS.containsKey(charAt)) {
-                result.append(CASE_CONSONANTS[charAt])
-                i++
-                isAfterConsonant = true
-                continue
-            }
-
-            // 3. Check for Vowel Matras (if after consonant)
-            if (isAfterConsonant) {
-                var matchedMatra: String? = null
-                var matraLen = 0
-                for ((vpat, matra) in VOWEL_MATRAS) {
-                    if (sub.startsWith(vpat, ignoreCase = true)) {
-                        matchedMatra = matra
-                        matraLen = vpat.length
+            // 3. Vowels
+            if (afterConsonant) {
+                var matra: String? = null
+                var vowelLen = 0
+                var vowelPat = ""
+                for ((vpat, m) in VOWEL_MATRAS) {
+                    if (input.startsWith(vpat, i, ignoreCase = true)) {
+                        matra = m
+                        vowelLen = vpat.length
+                        vowelPat = vpat
                         break
                     }
                 }
-
-                if (matchedMatra != null) {
-                    // In Bengali, implicit 'o' or single 'a' at end of certain words might not need matra,
-                    // but for general phonetic, 'a' -> া, 'i' -> ি etc.
-                    result.append(matchedMatra)
-                    i += matraLen
-                    isAfterConsonant = false
+                if (matra != null) {
+                    if (vowelPat == "o") {
+                        // inherent অ inside a word, ো only at the end
+                        if (i + 1 == len) result.append("ো")
+                    } else {
+                        result.append(matra)
+                    }
+                    i += vowelLen
+                    afterConsonant = false
                     continue
                 }
             } else {
-                // 4. Initial or Independent Vowels
-                var matchedInitial: String? = null
-                var initLen = 0
+                var independent: String? = null
+                var vowelLen = 0
                 for ((vpat, iv) in INITIAL_VOWELS) {
-                    if (sub.startsWith(vpat, ignoreCase = true)) {
-                        matchedInitial = iv
-                        initLen = vpat.length
+                    if (input.startsWith(vpat, i, ignoreCase = true)) {
+                        independent = iv
+                        vowelLen = vpat.length
                         break
                     }
                 }
-
-                if (matchedInitial != null) {
-                    result.append(matchedInitial)
-                    i += initLen
-                    isAfterConsonant = false
+                if (independent != null) {
+                    result.append(independent)
+                    i += vowelLen
+                    afterConsonant = false
                     continue
                 }
             }
 
-            // 5. Single consonants
-            val lowerChar = charAt.lowercaseChar()
-            if (SINGLE_CONSONANTS.containsKey(lowerChar)) {
-                result.append(SINGLE_CONSONANTS[lowerChar])
+            // 4. Single consonants
+            val single = SINGLE_CONSONANTS[ch.lowercaseChar()]
+            if (single != null) {
+                result.append(single)
                 i++
-                isAfterConsonant = true
+                afterConsonant = true
                 continue
             }
 
-            // 6. Unknown / punctuation / symbols
-            result.append(charAt)
+            // 5. Anything else passes through
+            result.append(ch)
             i++
-            isAfterConsonant = false
+            afterConsonant = false
         }
 
         return result.toString()
-    }
-
-    private fun matchCasingOrPreserve(original: String, bengali: String): String {
-        return bengali
     }
 }
