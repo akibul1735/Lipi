@@ -16,10 +16,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -49,16 +47,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.PadmaTealPrimary
-import com.example.ui.theme.TerracottaSecondary
 
 enum class MainNavTab(
     val titleBn: String,
     val selectedIcon: androidx.compose.ui.graphics.vector.ImageVector,
     val unselectedIcon: androidx.compose.ui.graphics.vector.ImageVector
 ) {
-    STUDIO("ওয়ার্কবেঞ্চ", Icons.Filled.EditNote, Icons.Outlined.EditNote),
-    SIMULATOR("চ্যাট সিমুলেটর", Icons.Filled.ChatBubble, Icons.Outlined.ChatBubbleOutline),
-    SETTINGS("সেটিংস ও অ্যাপ", Icons.Filled.Tune, Icons.Outlined.Tune)
+    STUDIO("অনুবাদ স্টুডিও", Icons.Filled.EditNote, Icons.Outlined.EditNote),
+    SETTINGS("সেটিংস ও সাহায্য", Icons.Filled.Tune, Icons.Outlined.Tune)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -174,8 +170,7 @@ fun LipiMainScreen(
             Crossfade(targetState = selectedTab, label = "TabCrossfade") { targetIndex ->
                 when (targetIndex) {
                     0 -> StudioScreen(viewModel = viewModel)
-                    1 -> ChatSimulatorScreen(viewModel = viewModel)
-                    2 -> SettingsScreen(viewModel = viewModel)
+                    1 -> SettingsScreen(viewModel = viewModel)
                 }
             }
         }

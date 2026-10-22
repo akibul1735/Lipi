@@ -13,9 +13,6 @@ class LipiRepository(private val context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
 
-    private val _targetApps = MutableStateFlow<List<TargetAppConfig>>(loadTargetApps())
-    val targetApps: StateFlow<List<TargetAppConfig>> = _targetApps.asStateFlow()
-
     private val _isFloatingServiceEnabled = MutableStateFlow(
         prefs.getBoolean("floating_enabled", true)
     )
@@ -31,57 +28,6 @@ class LipiRepository(private val context: Context) {
 
     private val _recentConversions = MutableStateFlow<List<ConversionResult>>(emptyList())
     val recentConversions: StateFlow<List<ConversionResult>> = _recentConversions.asStateFlow()
-
-    private fun loadTargetApps(): List<TargetAppConfig> {
-        val defaultApps = listOf(
-            TargetAppConfig("com.whatsapp", "WhatsApp", "whatsapp", true),
-            TargetAppConfig("com.facebook.orca", "Messenger", "messenger", true),
-            TargetAppConfig("org.telegram.messenger", "Telegram", "telegram", true),
-            TargetAppConfig("com.google.android.apps.messaging", "Google Messages", "sms", true),
-            TargetAppConfig("com.instagram.android", "Instagram", "instagram", false)
-        )
-        val saved = prefs.getString("target_apps_json", null) ?: return defaultApps
-        return try {
-            val jsonArray = JSONArray(saved)
-            val list = mutableListOf<TargetAppConfig>()
-            for (i in 0 until jsonArray.length()) {
-                val obj = jsonArray.getJSONObject(i)
-                list.add(
-                    TargetAppConfig(
-                        packageName = obj.getString("packageName"),
-                        appName = obj.getString("appName"),
-                        iconName = obj.optString("iconName", "chat"),
-                        isEnabled = obj.optBoolean("isEnabled", true)
-                    )
-                )
-            }
-            if (list.isEmpty()) defaultApps else list
-        } catch (e: Exception) {
-            defaultApps
-        }
-    }
-
-    private fun saveTargetApps(apps: List<TargetAppConfig>) {
-        val jsonArray = JSONArray()
-        apps.forEach { app ->
-            val obj = JSONObject().apply {
-                put("packageName", app.packageName)
-                put("appName", app.appName)
-                put("iconName", app.iconName)
-                put("isEnabled", app.isEnabled)
-            }
-            jsonArray.put(obj)
-        }
-        prefs.edit().putString("target_apps_json", jsonArray.toString()).apply()
-        _targetApps.value = apps
-    }
-
-    fun toggleAppEnabled(packageName: String) {
-        val updated = _targetApps.value.map {
-            if (it.packageName == packageName) it.copy(isEnabled = !it.isEnabled) else it
-        }
-        saveTargetApps(updated)
-    }
 
     fun setFloatingServiceEnabled(enabled: Boolean) {
         prefs.edit().putBoolean("floating_enabled", enabled).apply()

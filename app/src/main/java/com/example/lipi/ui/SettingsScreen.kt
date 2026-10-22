@@ -5,7 +5,6 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
-import com.example.lipi.service.LipiOverlayService
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,13 +22,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccessibilityNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -61,8 +60,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.lipi.data.TargetAppConfig
-import com.example.lipi.data.WordbookEntry
+import com.example.lipi.service.LipiOverlayService
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.PadmaTealPrimary
 import com.example.ui.theme.TerracottaSecondary
@@ -73,18 +71,16 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val targetApps by viewModel.targetApps.collectAsState()
+    val scrollState = rememberScrollState()
+
     val isFloatingEnabled by viewModel.isFloatingServiceEnabled.collectAsState()
+    val overlayGranted by viewModel.overlayPermissionGranted.collectAsState()
     val convertDigits by viewModel.convertDigitsToBengali.collectAsState()
     val customWordbook by viewModel.customWordbook.collectAsState()
-    val overlayGranted by viewModel.overlayPermissionGranted.collectAsState()
-    val accessibilityEnabled by viewModel.accessibilityEnabled.collectAsState()
 
     var showAddWordDialog by remember { mutableStateOf(false) }
     var newBanglish by remember { mutableStateOf("") }
     var newBengali by remember { mutableStateOf("") }
-
-    val scrollState = rememberScrollState()
 
     LaunchedEffect(Unit) {
         viewModel.checkSystemPermissions(context)
@@ -95,7 +91,7 @@ fun SettingsScreen(
             .fillMaxSize()
             .verticalScroll(scrollState)
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Master Floating Switch Card
         Card(
@@ -120,7 +116,7 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "ভাসমান মেসেজিং সহকারী ('ল' বল)",
+                            text = "ভাসমান 'ল' বল (কপি সহকারী)",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -128,9 +124,9 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = if (isFloatingEnabled)
-                                "সক্রিয়: স্ক্রিনে ভাসমান 'ল' বোতাম দৃশ্যমান। হোয়াটসঅ্যাপ বা মেসেঞ্জারে মেসেজ কপি করে 'ল' বল চাপলেই তাৎক্ষণিক বাংলা অনুবাদ আসবে।"
+                                "সক্রিয়: স্ক্রিনে ভাসমান 'ল' বোতাম চালু আছে। যেকোনো অ্যাপে মেসেজ কপি করে 'ল' বল চাপলেই তাৎক্ষণিক বাংলা দেখা যাবে।"
                             else
-                                "নিষ্ক্রিয়: স্ক্রিনে ভাসমান উইন্ডো প্রদর্শিত হবে না।",
+                                "নিষ্ক্রিয়: ভাসমান উইন্ডো বন্ধ রয়েছে।",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -148,17 +144,10 @@ fun SettingsScreen(
                                 try { context.startActivity(intent) } catch (e: Exception) { /* fallback */ }
                             } else {
                                 viewModel.setFloatingServiceEnabled(enable)
-                                if (enable) {
-                                    val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
-                                        action = LipiOverlayService.ACTION_START_ASSISTANT
-                                    }
-                                    try { context.startService(serviceIntent) } catch (e: Exception) { e.printStackTrace() }
-                                } else {
-                                    val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
-                                        action = LipiOverlayService.ACTION_DISMISS
-                                    }
-                                    try { context.startService(serviceIntent) } catch (e: Exception) { e.printStackTrace() }
+                                val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
+                                    action = if (enable) LipiOverlayService.ACTION_START_ASSISTANT else LipiOverlayService.ACTION_DISMISS
                                 }
+                                try { context.startService(serviceIntent) } catch (e: Exception) { e.printStackTrace() }
                             }
                         },
                         colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = PadmaTealPrimary),
@@ -224,7 +213,7 @@ fun SettingsScreen(
             }
         }
 
-        // Native Android Permissions Card
+        // 3-Step Simple Copy & Translate Guide
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -233,24 +222,57 @@ fun SettingsScreen(
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
                 Text(
-                    text = "অ্যান্ড্রয়েড সিস্টেম অনুমতি ও স্ট্যাটাস",
+                    text = "সহজ ব্যবহারের ৩টি ধাপ (কপি ও অনুবাদ)",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "অন্যান্য মেসেজিং অ্যাপের ওপর ভাসমান উইন্ডো প্রদর্শন ও টেক্সট সনাক্তকরণের জন্য অনুমতি প্রয়োজন:",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                Spacer(modifier = Modifier.height(12.dp))
+
+                GuideStepRow(
+                    icon = Icons.Default.ContentCopy,
+                    stepNumber = "১",
+                    title = "যেকোনো অ্যাপে বাংলিশ কপি করুন",
+                    description = "হোয়াটসঅ্যাপ, মেসেঞ্জার, ফেসবুক বা ব্রাউজারে যেকোনো মেসেজ বা লেখা সিলেক্ট করে 'Copy' করুন।"
                 )
+                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.surfaceVariant)
 
-                Spacer(modifier = Modifier.height(14.dp))
+                GuideStepRow(
+                    icon = Icons.Default.TouchApp,
+                    stepNumber = "২",
+                    title = "ভাসমান 'ল' বোতামে চাপুন",
+                    description = "স্ক্রিনের পাশে থাকা ভাসমান 'ল' বলে ট্যাপ করুন (অথবা লিপি অ্যাপে এসে 'পেস্ট করুন' চাপুন)।"
+                )
+                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.surfaceVariant)
 
-                // Permission Item 1: Overlay
+                GuideStepRow(
+                    icon = Icons.Default.Translate,
+                    stepNumber = "৩",
+                    title = "তাৎক্ষণিক বাংলা দেখুন ও কপি করুন",
+                    description = "পপআপে শতভাগ প্রমিত বাংলা রূপান্তর দেখতে পাবেন। 'কপি করুন' চাপলেই আপনার ক্লিপবোর্ডে বাংলা লেখা রেডি!"
+                )
+            }
+        }
+
+        // Overlay Permission Status Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Text(
+                    text = "সিস্টেম অনুমতি ও নিরাপত্তা",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
                 PermissionStatusRow(
-                    title = "ভাসমান উইন্ডো অনুমতি (Overlay Permission)",
-                    description = "হোয়াটসঅ্যাপ বা মেসেঞ্জারের ওপর 'ল' ব্যাজ ভাসানোর জন্য দরকার।",
+                    title = "ভাসমান উইন্ডো অনুমতি (Display over other apps)",
+                    description = "হোয়াটসঅ্যাপ বা মেসেঞ্জারের ওপর 'ল' ব্যাজ ভাসানোর জন্য প্রয়োজন।",
                     isGranted = overlayGranted,
                     onActionClick = {
                         val intent = Intent(
@@ -267,7 +289,6 @@ fun SettingsScreen(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-                // Play Protect Safe Mode Notice
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -281,72 +302,16 @@ fun SettingsScreen(
                     )
                     Column {
                         Text(
-                            text = "প্লে প্রোটেক্ট নিরাপদ মোড (Play Protect Safe)",
+                            text = "প্লে প্রোটেক্ট নিরাপদ কপি মোড",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "সংবেদনশীল পারমিশন ছাড়াই নিরাপদ ভাসমান 'ল' বল এবং কপি-পেস্ট অনুবাদের মাধ্যমে কাজ করে। কোনো ইনস্টলেশন ব্লক নেই।",
+                            text = "কোনো সংবেদনশীল পারমিশন ছাড়াই নিরাপদ ওভারলে ও কপি-পেস্টের মাধ্যমে কাজ করে। গুগল প্লে প্রোটেক্টে কোনো ব্লক নেই।",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
-                }
-            }
-        }
-
-        // Target Applications Selector
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Text(
-                    text = "সমর্থিত মেসেজিং অ্যাপসমূহ",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "যে অ্যাপগুলোতে লিপি কাজ করবে তা বেছে নিন:",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                targetApps.forEachIndexed { index, app ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = app.appName,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = app.packageName,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        }
-                        Switch(
-                            checked = app.isEnabled,
-                            onCheckedChange = { viewModel.toggleApp(app.packageName) },
-                            modifier = Modifier.testTag("app_switch_${app.appName.lowercase()}")
-                        )
-                    }
-                    if (index < targetApps.size - 1) {
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.surfaceVariant)
                     }
                 }
             }
@@ -374,7 +339,7 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "ইংরেজি সংখ্যাকে বাংলা সংখ্যায় রূপান্তর",
+                            text = "ইংরেজি সংখ্যাকে বাংলা সংখ্যায় রূপান্তর",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
@@ -460,7 +425,7 @@ fun SettingsScreen(
                                     newBanglish = ""
                                     newBengali = ""
                                     showAddWordDialog = false
-                                    Toast.makeText(context, "শব্দ যুক্ত হয়েছে!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "শব্দ যুক্ত হয়েছে!", Toast.LENGTH_SHORT).show()
                                 }
                             },
                             modifier = Modifier.align(Alignment.End),
@@ -488,15 +453,12 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "ক্যাটাগরি: ${entry.category}",
+                                text = "ব্যক্তিগত পছন্দ",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.outline
                             )
                         }
-                        IconButton(
-                            onClick = { viewModel.removeCustomWord(entry.id) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
+                        IconButton(onClick = { viewModel.removeCustomWord(entry.id) }) {
                             Icon(
                                 Icons.Default.Delete,
                                 contentDescription = "মুছুন",
@@ -509,7 +471,7 @@ fun SettingsScreen(
             }
         }
 
-        // Privacy & Transparency Card
+        // Privacy & Offline Security Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -525,7 +487,7 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "গোপনীয়তা ও অফলাইন সুরক্ষা",
+                        text = "গোপনীয়তা ও অফলাইন সুরক্ষা",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = PadmaTealPrimary
@@ -539,6 +501,51 @@ fun SettingsScreen(
                     lineHeight = 20.sp
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun GuideStepRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    stepNumber: String,
+    title: String,
+    description: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(PadmaTealPrimary),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = stepNumber,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp
+            )
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 18.sp
+            )
         }
     }
 }

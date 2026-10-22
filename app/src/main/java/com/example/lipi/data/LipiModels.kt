@@ -35,19 +35,3 @@ data class WordbookEntry(
     val bengali: String,
     val category: String = "কাস্টম"
 )
-
-data class TargetAppConfig(
-    val packageName: String,
-    val appName: String,
-    val iconName: String,
-    val isEnabled: Boolean = true
-)
-
-data class SimulatedChatMessage(
-    val id: String = java.util.UUID.randomUUID().toString(),
-    val senderName: String,
-    val messageText: String,
-    val timestamp: String,
-    val isMe: Boolean = false,
-    val detectedBanglish: Boolean = true
-)

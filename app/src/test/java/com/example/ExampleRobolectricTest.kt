@@ -27,9 +27,8 @@ class ExampleRobolectricTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val repository = LipiRepository(context)
         assertTrue(repository.isFloatingServiceEnabled.value)
-        val targetApps = repository.targetApps.value
-        assertTrue(targetApps.any { it.appName == "WhatsApp" && it.isEnabled })
-        assertTrue(targetApps.any { it.appName == "Messenger" && it.isEnabled })
-        assertTrue(targetApps.any { it.appName == "Telegram" && it.isEnabled })
+        val wordbook = repository.customWordbook.value
+        assertNotNull(wordbook)
+        assertTrue(wordbook.isNotEmpty())
     }
 }
