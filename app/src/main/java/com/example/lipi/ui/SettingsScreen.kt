@@ -38,6 +38,7 @@ import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Search
@@ -92,9 +93,25 @@ fun SettingsScreen(
     val scrollState = rememberScrollState()
 
     val isFloatingEnabled by viewModel.isFloatingServiceEnabled.collectAsState()
+    val isPersistentNotificationEnabled by viewModel.isPersistentNotificationEnabled.collectAsState()
     val overlayGranted by viewModel.overlayPermissionGranted.collectAsState()
     val convertDigits by viewModel.convertDigitsToBengali.collectAsState()
     val customWordbook by viewModel.customWordbook.collectAsState()
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            viewModel.setPersistentNotificationEnabled(true)
+            val intent = Intent(context, LipiOverlayService::class.java).apply {
+                action = LipiOverlayService.ACTION_UPDATE_NOTIFICATION
+            }
+            try { context.startService(intent) } catch (e: Exception) { e.printStackTrace() }
+            Toast.makeText(context, "নোটিফিকেশন অনুমতি সক্রিয় হয়েছে!", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "নোটিফিকেশন অনুমতি ছাড়া বার দৃশ্যমান হবে না।", Toast.LENGTH_LONG).show()
+        }
+    }
 
     var showAddWordDialog by remember { mutableStateOf(false) }
     var newBanglish by remember { mutableStateOf("") }
@@ -260,6 +277,131 @@ fun SettingsScreen(
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text("লুকান")
+                    }
+                }
+            }
+        }
+
+        // Dedicated Persistent Notification Bar Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isPersistentNotificationEnabled)
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                else
+                    MaterialTheme.colorScheme.surfaceVariant
+            ),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Notifications,
+                                contentDescription = null,
+                                tint = PadmaTealPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "দ্রুত নোটিফিকেশন বার (Persistent Bar)",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (isPersistentNotificationEnabled)
+                                "সক্রিয়: স্ট্যাটাস বারে স্থায়ী 'লিপি দ্রুত অনুবাদ বার' পিন করা আছে। যেকোনো অ্যাপে থাকা অবস্থায় উপর থেকে নোটিফিকেশন বার টেনে ১-ট্যাপে সরাসরি ৩০০dp অনুবাদ উইন্ডো খুলুন।"
+                            else
+                                "নিষ্ক্রিয়: নোটিফিকেশন বার বন্ধ রয়েছে।",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Switch(
+                        checked = isPersistentNotificationEnabled,
+                        onCheckedChange = { enable ->
+                            if (enable && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                if (context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                    notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                    return@Switch
+                                }
+                            }
+                            viewModel.setPersistentNotificationEnabled(enable)
+                            val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
+                                action = LipiOverlayService.ACTION_UPDATE_NOTIFICATION
+                            }
+                            try { context.startService(serviceIntent) } catch (e: Exception) { e.printStackTrace() }
+                        },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = PadmaTealPrimary),
+                        modifier = Modifier.testTag("persistent_notification_switch")
+                    )
+                }
+
+                if (isPersistentNotificationEnabled) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                if (!Settings.canDrawOverlays(context)) {
+                                    Toast.makeText(context, "অনুবাদ উইন্ডো প্রদর্শনের জন্য ভাসমান উইন্ডো অনুমতি দিন", Toast.LENGTH_LONG).show()
+                                    val intent = Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:${context.packageName}")
+                                    )
+                                    try { context.startActivity(intent) } catch (e: Exception) { /* fallback */ }
+                                } else {
+                                    val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
+                                        action = LipiOverlayService.ACTION_OPEN_POPUP
+                                    }
+                                    try {
+                                        context.startService(serviceIntent)
+                                        Toast.makeText(context, "৩০০dp অনুবাদ উইন্ডো চালু হয়েছে!", Toast.LENGTH_SHORT).show()
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("test_quick_notification_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("উইন্ডো পরীক্ষা করুন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
+                                    action = LipiOverlayService.ACTION_UPDATE_NOTIFICATION
+                                }
+                                try {
+                                    context.startService(serviceIntent)
+                                    Toast.makeText(context, "নোটিফিকেশন বার রিফ্রেশ করা হয়েছে", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("রিফ্রেশ বার", fontSize = 13.sp)
+                        }
                     }
                 }
             }

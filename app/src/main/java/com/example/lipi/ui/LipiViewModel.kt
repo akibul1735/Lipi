@@ -30,6 +30,7 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
     val overlayPermissionGranted: StateFlow<Boolean> = _overlayPermissionGranted.asStateFlow()
 
     val isFloatingServiceEnabled: StateFlow<Boolean> = repository.isFloatingServiceEnabled
+    val isPersistentNotificationEnabled: StateFlow<Boolean> = repository.isPersistentNotificationEnabled
     val isAutoClipboardMonitoringEnabled: StateFlow<Boolean> = repository.isAutoClipboardMonitoringEnabled
     val transliterationStyle: StateFlow<TransliterationStyle> = repository.transliterationStyle
     val convertDigitsToBengali: StateFlow<Boolean> = repository.convertDigitsToBengali
@@ -96,6 +97,10 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
 
     fun setFloatingServiceEnabled(enabled: Boolean) {
         repository.setFloatingServiceEnabled(enabled)
+    }
+
+    fun setPersistentNotificationEnabled(enabled: Boolean) {
+        repository.setPersistentNotificationEnabled(enabled)
     }
 
     fun setAutoClipboardMonitoring(enabled: Boolean) {

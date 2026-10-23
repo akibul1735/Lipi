@@ -18,6 +18,11 @@ class LipiRepository(private val context: Context) {
     )
     val isFloatingServiceEnabled: StateFlow<Boolean> = _isFloatingServiceEnabled.asStateFlow()
 
+    private val _isPersistentNotificationEnabled = MutableStateFlow(
+        prefs.getBoolean("persistent_notification_enabled", true)
+    )
+    val isPersistentNotificationEnabled: StateFlow<Boolean> = _isPersistentNotificationEnabled.asStateFlow()
+
     private val _convertDigitsToBengali = MutableStateFlow(
         prefs.getBoolean("convert_digits", false)
     )
@@ -43,6 +48,11 @@ class LipiRepository(private val context: Context) {
 
     private val _recentConversions = MutableStateFlow<List<ConversionResult>>(emptyList())
     val recentConversions: StateFlow<List<ConversionResult>> = _recentConversions.asStateFlow()
+
+    fun setPersistentNotificationEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("persistent_notification_enabled", enabled).apply()
+        _isPersistentNotificationEnabled.value = enabled
+    }
 
     fun setTransliterationStyle(style: TransliterationStyle) {
         prefs.edit().putString("transliteration_style", style.name).apply()

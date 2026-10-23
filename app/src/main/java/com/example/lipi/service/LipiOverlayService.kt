@@ -27,6 +27,13 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import androidx.core.app.NotificationCompat
+import com.example.MainActivity
+import com.example.R
 import com.example.lipi.engine.MixedScriptTokenizer
 
 /**
@@ -35,6 +42,7 @@ import com.example.lipi.engine.MixedScriptTokenizer
  * 1. Persistent draggable floating badge ('ল') over WhatsApp, Messenger, etc.
  * 2. Automated Clipboard Monitoring: Instantly detects copied Banglish, shows quick floating translation preview pill.
  * 3. Interactive translation popup with reliable Paste and Copy functionality.
+ * 4. Persistent Notification Bar for 1-tap fastest opening and translation actions anywhere.
  */
 class LipiOverlayService : Service() {
 
@@ -42,9 +50,15 @@ class LipiOverlayService : Service() {
         const val ACTION_START_ASSISTANT = "com.example.lipi.action.START_ASSISTANT"
         const val ACTION_SHOW_BADGE = "com.example.lipi.action.SHOW_BADGE"
         const val ACTION_DISMISS = "com.example.lipi.action.DISMISS"
+        const val ACTION_OPEN_POPUP = "com.example.lipi.action.OPEN_POPUP"
+        const val ACTION_TOGGLE_BADGE = "com.example.lipi.action.TOGGLE_BADGE"
+        const val ACTION_UPDATE_NOTIFICATION = "com.example.lipi.action.UPDATE_NOTIFICATION"
         const val EXTRA_DETECTED_TEXT = "extra_detected_text"
         const val EXTRA_BOUNDS_X = "extra_bounds_x"
         const val EXTRA_BOUNDS_Y = "extra_bounds_y"
+
+        private const val NOTIFICATION_ID = 2001
+        private const val CHANNEL_ID = "lipi_persistent_quick_bar"
     }
 
     private var windowManager: WindowManager? = null
@@ -96,8 +110,41 @@ class LipiOverlayService : Service() {
         when (intent?.action) {
             ACTION_DISMISS -> {
                 dismissAllOverlays()
+                cancelPersistentNotification()
                 stopSelf()
                 return START_NOT_STICKY
+            }
+            ACTION_OPEN_POPUP -> {
+                val displayMetrics = resources.displayMetrics
+                val centerX = displayMetrics.widthPixels / 2
+                val popupY = (displayMetrics.heightPixels * 0.16f).toInt().coerceAtLeast(100)
+                if (translationPopupView != null) {
+                    dismissTranslationPopup()
+                }
+                try {
+                    val clipText = clipboardManager?.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()
+                    if (!clipText.isNullOrBlank()) {
+                        currentText = clipText
+                        convertedBengali = processText(clipText)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                showTranslationPopup(centerX, popupY)
+                updatePersistentNotification()
+            }
+            ACTION_TOGGLE_BADGE -> {
+                if (floatingBadgeView != null && floatingBadgeView?.visibility == View.VISIBLE) {
+                    floatingBadgeView?.visibility = View.GONE
+                    Toast.makeText(this, "ভাসমান বল লুকানো হয়েছে", Toast.LENGTH_SHORT).show()
+                } else {
+                    ensureFloatingBadgeVisible()
+                    Toast.makeText(this, "ভাসমান বল দৃশ্যমান হয়েছে", Toast.LENGTH_SHORT).show()
+                }
+                updatePersistentNotification()
+            }
+            ACTION_UPDATE_NOTIFICATION -> {
+                updatePersistentNotification()
             }
             ACTION_SHOW_BADGE -> {
                 val text = intent.getStringExtra(EXTRA_DETECTED_TEXT)
@@ -108,12 +155,15 @@ class LipiOverlayService : Service() {
                 } else {
                     ensureFloatingBadgeVisible()
                 }
+                updatePersistentNotification()
             }
             ACTION_START_ASSISTANT -> {
                 ensureFloatingBadgeVisible()
+                updatePersistentNotification()
             }
             else -> {
                 ensureFloatingBadgeVisible()
+                updatePersistentNotification()
             }
         }
 
@@ -517,8 +567,9 @@ class LipiOverlayService : Service() {
         }
 
         val displayMetrics = resources.displayMetrics
-        // Compact width: 260dp, keeping floating overlay sleek and non-intrusive
-        val width = (260 * displayMetrics.density).toInt().coerceAtMost((displayMetrics.widthPixels * 0.85f).toInt())
+        // Floating window width: 300dp as requested by user
+        val targetWidthDp = 300
+        val width = (targetWidthDp * displayMetrics.density).toInt().coerceAtMost((displayMetrics.widthPixels * 0.95f).toInt())
 
         // Root overlay covering full screen to intercept outside touches and close the window
         val rootOverlay = FrameLayout(this).apply {
@@ -555,12 +606,18 @@ class LipiOverlayService : Service() {
             setOnClickListener { /* consume click */ }
         }
 
+        val isNearCenter = Math.abs(anchorX - displayMetrics.widthPixels / 2) < 80
+        val targetLeft = if (isNearCenter) {
+            (displayMetrics.widthPixels - width) / 2
+        } else {
+            anchorX - width + 60
+        }
         val cardLayoutParams = FrameLayout.LayoutParams(
             width,
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
-            leftMargin = (anchorX - width + 60).coerceIn(16, displayMetrics.widthPixels - width - 16)
-            topMargin = (anchorY + 40).coerceIn(60, displayMetrics.heightPixels - 360)
+            leftMargin = targetLeft.coerceIn(16, displayMetrics.widthPixels - width - 16)
+            topMargin = (anchorY + 30).coerceIn(60, displayMetrics.heightPixels - 360)
         }
         container.layoutParams = cardLayoutParams
 
@@ -931,6 +988,112 @@ class LipiOverlayService : Service() {
         }
     }
 
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "লিপি দ্রুত এক্সেস বার (Quick Access)",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "বাংলিশ ও বাংলা দ্রুত অনুবাদের জন্য স্থায়ী নোটিফিকেশন বার"
+                setShowBadge(false)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            notificationManager?.createNotificationChannel(channel)
+        }
+    }
+
+    private fun updatePersistentNotification() {
+        val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
+        val isNotificationEnabled = prefs.getBoolean("persistent_notification_enabled", true)
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+
+        if (!isNotificationEnabled) {
+            cancelPersistentNotification()
+            return
+        }
+
+        createNotificationChannel()
+
+        // 1. PendingIntent to open the 300dp floating translation popup directly
+        val openPopupIntent = Intent(this, LipiOverlayService::class.java).apply {
+            action = ACTION_OPEN_POPUP
+        }
+        val openPopupPendingIntent = PendingIntent.getService(
+            this,
+            101,
+            openPopupIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // 2. PendingIntent to open the Lipi main app / studio
+        val openAppIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val openAppPendingIntent = PendingIntent.getActivity(
+            this,
+            102,
+            openAppIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // 3. PendingIntent to toggle the floating ball
+        val toggleBadgeIntent = Intent(this, LipiOverlayService::class.java).apply {
+            action = ACTION_TOGGLE_BADGE
+        }
+        val toggleBadgePendingIntent = PendingIntent.getService(
+            this,
+            103,
+            toggleBadgeIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val isBadgeShowing = floatingBadgeView != null && floatingBadgeView?.visibility == View.VISIBLE
+
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification_lipi)
+            .setContentTitle("লিপি দ্রুত অনুবাদ বার")
+            .setContentText("উইন্ডো খুলতে বা যেকোনো অ্যাপে তাৎক্ষণিক বাংলা অনুবাদের জন্য ট্যাপ করুন")
+            .setSubText("Lipi Quick Access")
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setContentIntent(openPopupPendingIntent)
+            .addAction(
+                android.R.drawable.ic_menu_edit,
+                "উইন্ডো খুলুন",
+                openPopupPendingIntent
+            )
+            .addAction(
+                android.R.drawable.ic_menu_view,
+                "লিপি স্টুডিও",
+                openAppPendingIntent
+            )
+            .addAction(
+                android.R.drawable.ic_menu_compass,
+                if (isBadgeShowing) "বল লুকান" else "বল দেখান",
+                toggleBadgePendingIntent
+            )
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .build()
+
+        try {
+            notificationManager?.notify(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun cancelPersistentNotification() {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        try {
+            notificationManager?.cancel(NOTIFICATION_ID)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         try {
@@ -938,6 +1101,7 @@ class LipiOverlayService : Service() {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+        cancelPersistentNotification()
         dismissAllOverlays()
     }
 }

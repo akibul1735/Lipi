@@ -28,6 +28,12 @@ class MainActivity : ComponentActivity() {
         val repository = LipiRepository(applicationContext)
         viewModel = LipiViewModel(repository)
 
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+            }
+        }
+
         // Monitor floating switch and manage LipiOverlayService lifecycle
         lifecycleScope.launch {
             viewModel.isFloatingServiceEnabled.collectLatest { enabled ->
@@ -43,6 +49,22 @@ class MainActivity : ComponentActivity() {
                 } else if (!enabled) {
                     val intent = Intent(this@MainActivity, LipiOverlayService::class.java).apply {
                         action = LipiOverlayService.ACTION_DISMISS
+                    }
+                    try {
+                        startService(intent)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+        }
+
+        // Monitor persistent notification switch to update status bar notification
+        lifecycleScope.launch {
+            viewModel.isPersistentNotificationEnabled.collectLatest { enabled ->
+                if (Settings.canDrawOverlays(this@MainActivity)) {
+                    val intent = Intent(this@MainActivity, LipiOverlayService::class.java).apply {
+                        action = LipiOverlayService.ACTION_UPDATE_NOTIFICATION
                     }
                     try {
                         startService(intent)
