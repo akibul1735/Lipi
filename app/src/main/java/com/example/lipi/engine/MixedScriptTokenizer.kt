@@ -63,7 +63,7 @@ object MixedScriptTokenizer {
             if (ENGLISH_GRAMMAR_AND_SYSTEM_WORDS.contains(cleaned)) {
                 grammarHits++
             }
-            if (LipiDictionary.BANGLISH_LEXICON.containsKey(cleaned) && !ENGLISH_GRAMMAR_AND_SYSTEM_WORDS.contains(cleaned)) {
+            if (LipiDictionary.findWord(cleaned) != null && !ENGLISH_GRAMMAR_AND_SYSTEM_WORDS.contains(cleaned)) {
                 banglishHits++
             }
         }

@@ -1,10 +1,15 @@
 package com.example.lipi.data
 
+import android.content.Context
+import java.io.File
+import java.io.InputStream
+
 /**
  * Rich offline lexicon and training rules for Lipi:
  * 1. High-frequency Banglish colloquial terms, SMS abbreviations, pronouns, and verb conjugations.
- * 2. Bengali spelling corrections (standard Bangla Academy orthography).
- * 3. English technical/borrowed words to preserve without transliterating.
+ * 2. Version 5 Expanded Word Bank (~2,970 entries) and longest phrase matching.
+ * 3. Bengali spelling corrections (standard Bangla Academy orthography).
+ * 4. English technical/borrowed words to preserve without transliterating.
  */
 object LipiDictionary {
 
@@ -758,4 +763,215 @@ object LipiDictionary {
         '0' to '০', '1' to '১', '2' to '২', '3' to '৩', '4' to '৪',
         '5' to '৫', '6' to '৬', '7' to '৭', '8' to '৮', '9' to '৯'
     )
+
+    // =========================================================================
+    // VERSION 5 EXPANDED WORD BANK & PHRASE RUNTIME ENGINE
+    // =========================================================================
+    private val v5WordBank = HashMap<String, String>(3500)
+    private val v5Phrases = ArrayList<Pair<String, String>>(150)
+    private val v5LoadedRegexPhrases = ArrayList<Pair<Regex, String>>(150)
+
+    @Volatile
+    var isV5Loaded: Boolean = false
+        private set
+
+    init {
+        // Automatically attempt initial silent load on first class reference
+        loadV5Library(null)
+    }
+
+    /**
+     * Loads the attached Version 5 Expanded Word Bank (~2,970 entries)
+     * Supports:
+     * 1. Android AssetManager via Context
+     * 2. ClassLoader resource stream
+     * 3. Direct local file fallback for tests
+     */
+    fun loadV5Library(context: Context? = null): Boolean {
+        if (isV5Loaded && v5WordBank.isNotEmpty()) return true
+
+        synchronized(this) {
+            if (isV5Loaded && v5WordBank.isNotEmpty()) return true
+
+            var stream: InputStream? = null
+            try {
+                if (context != null) {
+                    stream = context.assets.open("lipi_v5_wordbank.txt")
+                }
+            } catch (e: Exception) {
+                // Ignore and try fallback
+            }
+
+            if (stream == null) {
+                try {
+                    stream = LipiDictionary::class.java.classLoader?.getResourceAsStream("lipi_v5_wordbank.txt")
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }
+
+            if (stream == null) {
+                val candidatePaths = listOf(
+                    "app/src/main/assets/lipi_v5_wordbank.txt",
+                    "app/src/main/resources/lipi_v5_wordbank.txt",
+                    "public/assets/aistudio/Lipi_Banglish_Bangla_Library_v5_Expanded_WordBank_ddd5927b.txt"
+                )
+                for (p in candidatePaths) {
+                    val f = File(p)
+                    if (f.exists() && f.canRead()) {
+                        try {
+                            stream = f.inputStream()
+                            break
+                        } catch (e: Exception) {
+                            // continue
+                        }
+                    }
+                }
+            }
+
+            if (stream != null) {
+                try {
+                    stream.bufferedReader(Charsets.UTF_8).useLines { lines ->
+                        for (rawLine in lines) {
+                            val line = rawLine.trim()
+                            if (line.isEmpty() || line.startsWith("#") || line.startsWith("//")) {
+                                continue
+                            }
+                            val delimiterIndex = line.indexOf('=')
+                            if (delimiterIndex > 0 && delimiterIndex < line.length - 1) {
+                                val key = line.substring(0, delimiterIndex).trim().lowercase()
+                                val value = line.substring(delimiterIndex + 1).trim()
+                                if (key.isNotEmpty() && value.isNotEmpty()) {
+                                    if (key.contains(" ")) {
+                                        v5Phrases.add(key to value)
+                                    } else {
+                                        v5WordBank[key] = value
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Sort phrases by longest match first (length and token count)
+                    v5Phrases.sortByDescending { it.first.length }
+                    v5LoadedRegexPhrases.clear()
+                    for ((phrase, replacement) in v5Phrases) {
+                        val escaped = Regex.escape(phrase)
+                        val regex = Regex("""(?i)\b$escaped\b""")
+                        v5LoadedRegexPhrases.add(regex to replacement)
+                    }
+
+                    isV5Loaded = true
+                    return true
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                } finally {
+                    try {
+                        stream.close()
+                    } catch (e: Exception) {
+                        // Ignore
+                    }
+                }
+            }
+        }
+        return isV5Loaded
+    }
+
+    fun getV5WordCount(): Int = v5WordBank.size
+    fun getV5PhraseCount(): Int = v5Phrases.size
+
+    /**
+     * Exact lookup in V5 word bank + base lexicon
+     */
+    fun findWord(token: String): String? {
+        val lower = token.lowercase()
+        return v5WordBank[lower] ?: BANGLISH_LEXICON[lower]
+    }
+
+    /**
+     * Replaces multi-word phrases according to longest phrase match first
+     */
+    fun replacePhrases(inputText: String): String {
+        if (!isV5Loaded) {
+            loadV5Library(null)
+        }
+        if (v5LoadedRegexPhrases.isEmpty()) return inputText
+
+        var result = inputText
+        for ((regex, replacement) in v5LoadedRegexPhrases) {
+            if (regex.containsMatchIn(result)) {
+                result = regex.replace(result, replacement)
+            }
+        }
+        return result
+    }
+
+    /**
+     * Morphology Rule Engine:
+     * Handles Bengali inflections like -ta, -ti, -te, -e, -er, -ke, -ra, -gulo, -gula, -der
+     * If root word exists in the dictionary, inflects it appropriately in Bengali!
+     */
+    fun findWordWithMorphology(token: String): String? {
+        val lower = token.lowercase()
+
+        // 1. Direct check
+        val direct = findWord(lower)
+        if (direct != null) return direct
+
+        // 2. Suffix stripping & appending
+        val suffixes = listOf(
+            "gulo" to "গুলো",
+            "gula" to "গুলা",
+            "der" to "দের",
+            "ta" to "টা",
+            "ti" to "টি",
+            "te" to "তে",
+            "ke" to "কে",
+            "ra" to "রা",
+            "er" to "ের",
+            "e" to "ে",
+            "o" to "ও",
+            "i" to "ই"
+        )
+
+        for ((engSuffix, bngSuffix) in suffixes) {
+            if (lower.length > engSuffix.length + 2 && lower.endsWith(engSuffix)) {
+                val root = lower.substring(0, lower.length - engSuffix.length)
+                val rootBng = findWord(root) ?: COMMON_ENGLISH_LOANWORDS_TO_BENGALI[root]
+                if (rootBng != null) {
+                    return if (engSuffix == "er" && rootBng.endsWith("া")) {
+                        // e.g. 'ঢাকা' + 'er' -> 'ঢাকার'
+                        "${rootBng}র"
+                    } else if (engSuffix == "e" && (rootBng.endsWith("া") || rootBng.endsWith("ি") || rootBng.endsWith("ী") || rootBng.endsWith("ু") || rootBng.endsWith("ূ") || rootBng.endsWith("ে"))) {
+                        // e.g. 'বাড়ি' + 'e' -> 'বাড়িতে'
+                        "${rootBng}তে"
+                    } else {
+                        "$rootBng$bngSuffix"
+                    }
+                }
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Elongation & Repeated Letter Normalizer:
+     * Handles chat slang like "oneeeek" -> "onek", "valoooo" -> "valo", "amiii" -> "ami", "plzzz" -> "pls"
+     */
+    fun findWordWithElongation(token: String): String? {
+        val lower = token.lowercase()
+        if (lower.length < 3) return null
+
+        // Check if string contains 3 or more repeated letters in a row (e.g. ooo, kkk, iii)
+        if (Regex("""(.)\1{2,}""").containsMatchIn(lower)) {
+            val collapsedDouble = lower.replace(Regex("""(.)\1{2,}"""), "$1$1")
+            findWordWithMorphology(collapsedDouble)?.let { return it }
+
+            val collapsedSingle = lower.replace(Regex("""(.)\1+"""), "$1")
+            findWordWithMorphology(collapsedSingle)?.let { return it }
+        }
+
+        return null
+    }
 }
