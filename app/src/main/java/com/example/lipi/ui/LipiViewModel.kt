@@ -7,8 +7,12 @@ import androidx.lifecycle.viewModelScope
 import com.example.lipi.data.ConversionResult
 import com.example.lipi.data.LipiMode
 import com.example.lipi.data.LipiRepository
+import com.example.lipi.data.OnlineEngineMode
+import com.example.lipi.data.ProcessedToken
+import com.example.lipi.data.TokenType
 import com.example.lipi.data.TransliterationStyle
 import com.example.lipi.data.WordbookEntry
+import com.example.lipi.engine.LipiOnlineEngine
 import com.example.lipi.engine.MixedScriptTokenizer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -17,10 +21,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
 
-    private val _inputText = MutableStateFlow("Ami valo asi, tumi kemon acho? Ajke 5pm e call dao.")
+    private val _inputText = MutableStateFlow("Khawya suru korli naki abr??")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
 
     private val _selectedMode = MutableStateFlow(LipiMode.SMART_AUTO)
@@ -33,6 +38,17 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
     val isPersistentNotificationEnabled: StateFlow<Boolean> = repository.isPersistentNotificationEnabled
     val isAutoClipboardMonitoringEnabled: StateFlow<Boolean> = repository.isAutoClipboardMonitoringEnabled
     val transliterationStyle: StateFlow<TransliterationStyle> = repository.transliterationStyle
+    val onlineEngineMode: StateFlow<OnlineEngineMode> = repository.onlineEngineMode
+    val geminiApiKey: StateFlow<String> = repository.geminiApiKey
+
+    private val _isOnlineTranslating = MutableStateFlow(false)
+    val isOnlineTranslating: StateFlow<Boolean> = _isOnlineTranslating.asStateFlow()
+
+    private val _onlineFeedback = MutableStateFlow<String?>(null)
+    val onlineFeedback: StateFlow<String?> = _onlineFeedback.asStateFlow()
+
+    private val _onlineRefinedResult = MutableStateFlow<String?>(null)
+    val onlineRefinedResult: StateFlow<String?> = _onlineRefinedResult.asStateFlow()
     val convertDigitsToBengali: StateFlow<Boolean> = repository.convertDigitsToBengali
     val customWordbook: StateFlow<List<WordbookEntry>> = repository.customWordbook
     val recentConversions: StateFlow<List<ConversionResult>> = repository.recentConversions
@@ -73,6 +89,59 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
 
     fun updateInput(text: String) {
         _inputText.value = text
+        _onlineRefinedResult.value = null
+        _onlineFeedback.value = null
+    }
+
+    fun setOnlineEngineMode(mode: OnlineEngineMode) {
+        repository.setOnlineEngineMode(mode)
+    }
+
+    fun setGeminiApiKey(key: String) {
+        repository.setGeminiApiKey(key)
+    }
+
+    fun loadTrainedChatDataset(): com.example.lipi.data.ImportResult {
+        return repository.loadTrainedChatDataset()
+    }
+
+    fun clearOnlineFeedback() {
+        _onlineFeedback.value = null
+    }
+
+    fun refineWithOnlineApi() {
+        val currentInput = _inputText.value.trim()
+        if (currentInput.isBlank()) return
+
+        val mode = repository.onlineEngineMode.value
+        val provider = when (mode) {
+            OnlineEngineMode.GEMINI_AI -> LipiOnlineEngine.Provider.GEMINI_AI
+            else -> LipiOnlineEngine.Provider.GOOGLE_INPUT_TOOLS
+        }
+
+        viewModelScope.launch {
+            _isOnlineTranslating.value = true
+            _onlineFeedback.value = "অনলাইন এপিআই থেকে ডেটা আনা হচ্ছে..."
+            val result = LipiOnlineEngine.transliterateOnline(
+                inputText = currentInput,
+                provider = provider,
+                customGeminiApiKey = repository.geminiApiKey.value
+            )
+            _isOnlineTranslating.value = false
+            result.onSuccess { converted ->
+                _onlineRefinedResult.value = converted
+                _onlineFeedback.value = "অনলাইন ক্লাউড রূপান্তর সফল!"
+                val finalResult = ConversionResult(
+                    originalText = currentInput,
+                    convertedText = converted,
+                    tokens = listOf(ProcessedToken(currentInput, converted, TokenType.BANGLISH)),
+                    modeUsed = _selectedMode.value
+                )
+                repository.addRecentConversion(finalResult)
+            }.onFailure { err ->
+                _onlineFeedback.value = "অনলাইন ত্রুটি: ${err.message ?: "কানেকশন ব্যাহত হয়েছে"}"
+            }
+        }
     }
 
     fun setMode(mode: LipiMode) {

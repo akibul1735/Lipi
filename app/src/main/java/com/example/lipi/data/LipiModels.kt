@@ -18,6 +18,21 @@ enum class TransliterationStyle(val titleBn: String, val subtitleBn: String) {
     )
 }
 
+enum class OnlineEngineMode(val titleBn: String, val subtitleBn: String) {
+    OFFLINE_ONLY(
+        "অফলাইন ইঞ্জিন (সবচেয়ে দ্রুত)",
+        "০ মিলি-সেকেন্ড ল্যাটেন্সি, ইন্টারনেট ছাড়া অভ্যন্তরীণ সমৃদ্ধ শব্দকোষ ও ফোনেটিক অ্যালগরিদম"
+    ),
+    ONLINE_CLOUD(
+        "Google ক্লাউড ট্রান্সলিটারেশন API",
+        "বিনামূল্যে ও দ্রুত ক্লাউড এপিআই — জটিল বাক্য ও আধুনিক চ্যাট রূপান্তরে নির্ভুল"
+    ),
+    GEMINI_AI(
+        "Gemini AI স্মার্ট ইঞ্জিন",
+        "উন্নত এআই কনটেক্সট মডেল — চলিত ভাষা, স্ল্যাং ও বানানের সর্বোচ্চ শুদ্ধতা"
+    )
+}
+
 
 enum class TokenType {
     BANGLISH,       // "Ami", "valo", "korba"

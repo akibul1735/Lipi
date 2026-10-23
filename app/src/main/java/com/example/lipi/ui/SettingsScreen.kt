@@ -42,6 +42,9 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -55,8 +58,13 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import com.example.lipi.data.OnlineEngineMode
+import com.example.lipi.engine.LipiOnlineEngine
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -610,6 +618,307 @@ fun SettingsScreen(
             }
         }
 
+        // =========================================================================
+        // Online API & Cloud Engine Configuration Card
+        // =========================================================================
+        val onlineEngineMode by viewModel.onlineEngineMode.collectAsState()
+        val geminiApiKey by viewModel.geminiApiKey.collectAsState()
+        var customApiKeyInput by remember(geminiApiKey) { mutableStateOf(geminiApiKey) }
+        var isTestingOnlineApi by remember { mutableStateOf(false) }
+        var testResultFeedback by remember { mutableStateOf<String?>(null) }
+        val settingsCoroutineScope = rememberCoroutineScope()
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Public,
+                            contentDescription = null,
+                            tint = PadmaTealPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "অনলাইন এপিআই ও ক্লাউড ইঞ্জিন",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = when (onlineEngineMode) {
+                            OnlineEngineMode.OFFLINE_ONLY -> MaterialTheme.colorScheme.surfaceVariant
+                            OnlineEngineMode.ONLINE_CLOUD -> PadmaTealPrimary.copy(alpha = 0.15f)
+                            OnlineEngineMode.GEMINI_AI -> CyanAccent.copy(alpha = 0.2f)
+                        }
+                    ) {
+                        Text(
+                            text = when (onlineEngineMode) {
+                                OnlineEngineMode.OFFLINE_ONLY -> "অফলাইন"
+                                OnlineEngineMode.ONLINE_CLOUD -> "Google ক্লাউড"
+                                OnlineEngineMode.GEMINI_AI -> "Gemini AI"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = when (onlineEngineMode) {
+                                OnlineEngineMode.OFFLINE_ONLY -> MaterialTheme.colorScheme.outline
+                                OnlineEngineMode.ONLINE_CLOUD -> PadmaTealPrimary
+                                OnlineEngineMode.GEMINI_AI -> PadmaTealPrimary
+                            },
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "জটিল বা আধুনিক বাংলিশ চ্যাট রূপান্তরের জন্য অনলাইন ক্লাউড বা এআই ইঞ্জিন বেছে নিন:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Engine Option 1: Offline Only
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { viewModel.setOnlineEngineMode(OnlineEngineMode.OFFLINE_ONLY) },
+                    color = if (onlineEngineMode == OnlineEngineMode.OFFLINE_ONLY)
+                        PadmaTealPrimary.copy(alpha = 0.12f)
+                    else
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        if (onlineEngineMode == OnlineEngineMode.OFFLINE_ONLY) 1.5.dp else 1.dp,
+                        if (onlineEngineMode == OnlineEngineMode.OFFLINE_ONLY) PadmaTealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = onlineEngineMode == OnlineEngineMode.OFFLINE_ONLY,
+                            onCheckedChange = { viewModel.setOnlineEngineMode(OnlineEngineMode.OFFLINE_ONLY) },
+                            colors = CheckboxDefaults.colors(checkedColor = PadmaTealPrimary)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "১. অফলাইন ইঞ্জিন (ডিফল্ট - সবচেয়ে দ্রুত)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (onlineEngineMode == OnlineEngineMode.OFFLINE_ONLY) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "০ মিলি-সেকেন্ড ল্যাটেন্সি। কোনো ইন্টারনেট ছাড়াই অভ্যন্তরীণ সমৃদ্ধ শব্দকোষ ও ফোনেটিক অ্যালগরিদমে রূপান্তর।",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Engine Option 2: Google Input Tools Cloud API
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { viewModel.setOnlineEngineMode(OnlineEngineMode.ONLINE_CLOUD) },
+                    color = if (onlineEngineMode == OnlineEngineMode.ONLINE_CLOUD)
+                        PadmaTealPrimary.copy(alpha = 0.12f)
+                    else
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        if (onlineEngineMode == OnlineEngineMode.ONLINE_CLOUD) 1.5.dp else 1.dp,
+                        if (onlineEngineMode == OnlineEngineMode.ONLINE_CLOUD) PadmaTealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = onlineEngineMode == OnlineEngineMode.ONLINE_CLOUD,
+                            onCheckedChange = { viewModel.setOnlineEngineMode(OnlineEngineMode.ONLINE_CLOUD) },
+                            colors = CheckboxDefaults.colors(checkedColor = PadmaTealPrimary)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "২. Google ক্লাউড ট্রান্সলিটারেশন API",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (onlineEngineMode == OnlineEngineMode.ONLINE_CLOUD) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = PadmaTealPrimary.copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = "ফ্রি ও দ্রুত",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = PadmaTealPrimary,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "ক্লাউড এপিআই — কোনো কী ছাড়াই সরাসরি কার্যকর। জটিল বাক্য ও চলিত মেসেজ রূপান্তরে অত্যন্ত নির্ভুল।",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Engine Option 3: Gemini AI
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { viewModel.setOnlineEngineMode(OnlineEngineMode.GEMINI_AI) },
+                    color = if (onlineEngineMode == OnlineEngineMode.GEMINI_AI)
+                        PadmaTealPrimary.copy(alpha = 0.12f)
+                    else
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        if (onlineEngineMode == OnlineEngineMode.GEMINI_AI) 1.5.dp else 1.dp,
+                        if (onlineEngineMode == OnlineEngineMode.GEMINI_AI) PadmaTealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = onlineEngineMode == OnlineEngineMode.GEMINI_AI,
+                                onCheckedChange = { viewModel.setOnlineEngineMode(OnlineEngineMode.GEMINI_AI) },
+                                colors = CheckboxDefaults.colors(checkedColor = PadmaTealPrimary)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "৩. Gemini AI স্মার্ট ইঞ্জিন",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (onlineEngineMode == OnlineEngineMode.GEMINI_AI) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "উন্নত এআই কনটেক্সট মডেল — চলিত ভাষা, আধুনিক স্ল্যাং ও বানানের শতভাগ শুদ্ধ রূপান্তর।",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    lineHeight = 18.sp
+                                )
+                            }
+                        }
+
+                        if (onlineEngineMode == OnlineEngineMode.GEMINI_AI) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = customApiKeyInput,
+                                onValueChange = { customApiKeyInput = it },
+                                label = { Text("Gemini API Key (ঐচ্ছিক)") },
+                                placeholder = { Text("AI Studio Gemini API Key পেস্ট করুন") },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                singleLine = true,
+                                trailingIcon = {
+                                    Button(
+                                        onClick = {
+                                            viewModel.setGeminiApiKey(customApiKeyInput)
+                                            Toast.makeText(context, "API Key সংরক্ষিত হয়েছে!", Toast.LENGTH_SHORT).show()
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        modifier = Modifier.padding(end = 4.dp)
+                                    ) {
+                                        Text("সেভ", fontSize = 12.sp)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Connection Test Button
+                OutlinedButton(
+                    onClick = {
+                        settingsCoroutineScope.launch {
+                            isTestingOnlineApi = true
+                            testResultFeedback = "টেস্ট করা হচ্ছে..."
+                            val testMode = when (onlineEngineMode) {
+                                OnlineEngineMode.GEMINI_AI -> LipiOnlineEngine.Provider.GEMINI_AI
+                                else -> LipiOnlineEngine.Provider.GOOGLE_INPUT_TOOLS
+                            }
+                            val res = LipiOnlineEngine.transliterateOnline(
+                                inputText = "Khawya suru korli naki abr??",
+                                provider = testMode,
+                                customGeminiApiKey = customApiKeyInput
+                            )
+                            isTestingOnlineApi = false
+                            res.onSuccess { text ->
+                                testResultFeedback = "সফল! রূপান্তর: $text"
+                            }.onFailure { err ->
+                                testResultFeedback = "ত্রুটি: ${err.message}"
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    if (isTestingOnlineApi) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("যাচাই করা হচ্ছে...")
+                    } else {
+                        Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(16.dp), tint = PadmaTealPrimary)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("অনলাইন কানেকশন টেস্ট করুন (Test API)")
+                    }
+                }
+
+                if (testResultFeedback != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = testResultFeedback!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+            }
+        }
+
         // Additional Formatting & Automation Preferences
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -890,6 +1199,41 @@ pdf=পিডিএফ"""
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("এক্সপোর্ট", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // 1-Tap Load Extended Chat Training Data
+                OutlinedButton(
+                    onClick = {
+                        val result = viewModel.loadTrainedChatDataset()
+                        Toast.makeText(
+                            context,
+                            "${result.addedCount}টি নতুন চ্যাট শব্দ (যেমন: suru→শুরু, abr→আবার, naki→নাকি ইত্যাদি) শব্দকোষে সফলভাবে যুক্ত হয়েছে!",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("load_extended_chat_data_button"),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = PadmaTealPrimary
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.2.dp, PadmaTealPrimary.copy(alpha = 0.6f))
+                ) {
+                    Icon(
+                        Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = PadmaTealPrimary
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        "অতিরিক্ত চ্যাট ট্রেইন ডাটা লোড করুন (১০০+ নতুন শব্দ)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))

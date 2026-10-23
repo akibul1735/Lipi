@@ -176,4 +176,13 @@ class ExampleUnitTest {
         val resHospitalForward = MixedScriptTokenizer.process("se haspatale ache", LipiMode.BANGLISH_TO_BENGALI)
         assertEquals("সে হাসপাতালে আছে", resHospitalForward.convertedText)
     }
+
+    @Test
+    fun testUserSentenceKhawyaSuruKorliNakiAbr() {
+        // User reported: "Khawya suru korli naki abr??" -> "খাওয়া সুরু করলি নাকই আব্র??"
+        // Verifies accurate transliteration to "খাওয়া শুরু করলি নাকি আবার??"
+        val input = "Khawya suru korli naki abr??"
+        val result = MixedScriptTokenizer.process(input, LipiMode.BANGLISH_TO_BENGALI)
+        assertEquals("খাওয়া শুরু করলি নাকি আবার??", result.convertedText)
+    }
 }

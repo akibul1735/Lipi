@@ -265,7 +265,41 @@ object LipiDictionary {
         "shobar" to "সবার",
         "sobar" to "সবার",
 
-        // Chat Abbreviations & Short forms
+        // Chat Abbreviations & Colloquial High-Frequency Words
+        "abr" to "আবার",
+        "abro" to "আবারও",
+        "abar" to "আবার",
+        "abaro" to "আবারও",
+        "naki" to "নাকি",
+        "baki" to "বাকি",
+        "daki" to "ডাকি",
+        "taki" to "তাকি",
+        "suru" to "শুরু",
+        "shuru" to "শুরু",
+        "surur" to "শুরুর",
+        "surute" to "শুরুতে",
+        "suru kor" to "শুরু কর",
+        "suru korli" to "শুরু করলি",
+        "suru korle" to "শুরু করলে",
+        "suru koro" to "শুরু করো",
+        "suru korbo" to "শুরু করব",
+        "suru kora" to "শুরু করা",
+        "khawya" to "খাওয়া",
+        "khawa" to "খাওয়া",
+        "khaba" to "খাবা",
+        "khabe" to "খাবে",
+        "khabo" to "খাব",
+        "khacchi" to "খাচ্ছি",
+        "korli" to "করলি",
+        "korlis" to "করলি",
+        "krli" to "করলি",
+        "krlis" to "করলি",
+        "r" to "আর",
+        "ar" to "আর",
+        "aro" to "আরও",
+        "aar" to "আর",
+        "k" to "কে",
+        "vlo" to "ভালো",
         "kmn" to "কেমন",
         "kno" to "কেন",
         "kn" to "কেন",
@@ -298,6 +332,7 @@ object LipiDictionary {
         "kee" to "কী",
         "kisu" to "কিছু",
         "kichu" to "কিছু",
+        "ksu" to "কিছু",
         "kisui" to "কিছুই",
         "kichui" to "কিছুই",
         "kobe" to "কবে",
@@ -973,6 +1008,10 @@ object LipiDictionary {
                     continue
                 }
                 val root = lower.substring(0, lower.length - engSuffix.length)
+                // Safeguard: Never strip emphatic "i" from common stems where it produces gibberish (e.g. "nak"+"i" -> "নাকই")
+                if (engSuffix == "i" && (root == "nak" || root == "bak" || root == "dak" || root == "tak" || root == "has" || root == "khus")) {
+                    continue
+                }
                 val rootBng = findWord(root) ?: COMMON_ENGLISH_LOANWORDS_TO_BENGALI[root]
                 if (rootBng != null) {
                     return if (engSuffix == "er" && rootBng.endsWith("া")) {
@@ -1012,4 +1051,73 @@ object LipiDictionary {
 
         return null
     }
+
+    /**
+     * Curated extended training dataset for 1-tap import in Settings / Custom Wordbook.
+     * Contains high-frequency Banglish colloquial chat terms, contractions, and verb conjugations.
+     */
+    val EXTENDED_TRAINED_CHAT_DATA: List<Pair<String, String>> = listOf(
+        "suru" to "শুরু",
+        "shuru" to "শুরু",
+        "surute" to "শুরুতে",
+        "surur" to "শুরুর",
+        "suru kor" to "শুরু কর",
+        "suru korli" to "শুরু করলি",
+        "suru korle" to "শুরু করলে",
+        "suru koro" to "শুরু করো",
+        "suru korbo" to "শুরু করব",
+        "suru kora" to "শুরু করা",
+        "naki" to "নাকি",
+        "abr" to "আবার",
+        "abro" to "আবারও",
+        "abar" to "আবার",
+        "abaro" to "আবারও",
+        "khawya" to "খাওয়া",
+        "khawa" to "খাওয়া",
+        "khaba" to "খাবা",
+        "khabe" to "খাবে",
+        "khabo" to "খাব",
+        "korli" to "করলি",
+        "korlis" to "করলি",
+        "korle" to "করলে",
+        "korlam" to "করলাম",
+        "krlam" to "করলাম",
+        "krli" to "করলি",
+        "krlis" to "করলি",
+        "kn" to "কেন",
+        "kno" to "কেন",
+        "keno" to "কেন",
+        "r" to "আর",
+        "ar" to "আর",
+        "aro" to "আরও",
+        "k" to "কে",
+        "ke" to "কে",
+        "ki" to "কী",
+        "kisu" to "কিছু",
+        "ksu" to "কিছু",
+        "vlo" to "ভালো",
+        "valo" to "ভালো",
+        "bhalo" to "ভালো",
+        "ase" to "আছে",
+        "asi" to "আছি",
+        "aso" to "আছো",
+        "asen" to "আছেন",
+        "hoise" to "হয়েছে",
+        "hyse" to "হয়েছে",
+        "hobe" to "হবে",
+        "bl" to "বল",
+        "blc" to "বলছি",
+        "dkh" to "দেখ",
+        "glm" to "গেলাম",
+        "glam" to "গেলাম",
+        "thikase" to "ঠিক আছে",
+        "tikase" to "ঠিক আছে",
+        "thik ache" to "ঠিক আছে",
+        "dekha hobe" to "দেখা হবে",
+        "kotha hobe" to "কথা হবে",
+        "kemon acho" to "কেমন আছো",
+        "ki obosta" to "কী অবস্থা",
+        "pera nai" to "প্যারা নাই",
+        "chill koro" to "চিল করো"
+    )
 }

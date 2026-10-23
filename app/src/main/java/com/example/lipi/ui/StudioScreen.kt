@@ -39,10 +39,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Spellcheck
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -50,6 +52,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -58,6 +61,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import com.example.lipi.data.OnlineEngineMode
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -95,15 +99,18 @@ fun StudioScreen(
     val inputText by viewModel.inputText.collectAsState()
     val selectedMode by viewModel.selectedMode.collectAsState()
     val currentResult by viewModel.currentResult.collectAsState()
+    val onlineEngineMode by viewModel.onlineEngineMode.collectAsState()
+    val isOnlineTranslating by viewModel.isOnlineTranslating.collectAsState()
+    val onlineFeedback by viewModel.onlineFeedback.collectAsState()
+    val onlineRefinedResult by viewModel.onlineRefinedResult.collectAsState()
     val scrollState = rememberScrollState()
 
     val samplePhrases = listOf(
+        "Khawya suru korli naki abr??",
         "Ami valo asi",
         "Tumi kemon acho?",
-        "আমি ভালো আছি, তুমি কেমন আছো?",
         "কালকে সকালে মিটিং আছে",
         "Ajke ki korba?",
-        "অসুস্হ মানুষটি হাসপাতালে ভর্তি",
         "Meeting er zoom link pathao please"
     )
 
@@ -425,11 +432,17 @@ fun StudioScreen(
         // Output Result Card
         OutputResultCard(
             result = currentResult,
+            onlineEngineMode = onlineEngineMode,
+            isOnlineTranslating = isOnlineTranslating,
+            onlineFeedback = onlineFeedback,
+            onlineRefinedResult = onlineRefinedResult,
+            onRefineOnline = { viewModel.refineWithOnlineApi() },
             onCopy = {
-                if (currentResult.convertedText.isNotBlank()) {
+                val textToCopy = onlineRefinedResult ?: currentResult.convertedText
+                if (textToCopy.isNotBlank()) {
                     try {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clip = ClipData.newPlainText("Lipi Result", currentResult.convertedText)
+                        val clip = ClipData.newPlainText("Lipi Result", textToCopy)
                         clipboard.setPrimaryClip(clip)
                         val copyToast = if (currentResult.modeUsed == LipiMode.BENGALI_TO_BANGLISH) "বাংলিশ ফলাফল সফলভাবে কপি হয়েছে!" else "বাংলা অনুবাদ সফলভাবে কপি হয়েছে!"
                         Toast.makeText(context, copyToast, Toast.LENGTH_SHORT).show()
@@ -442,9 +455,10 @@ fun StudioScreen(
                 }
             },
             onShare = {
+                val textToShare = onlineRefinedResult ?: currentResult.convertedText
                 val intent = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, currentResult.convertedText)
+                    putExtra(Intent.EXTRA_TEXT, textToShare)
                 }
                 context.startActivity(Intent.createChooser(intent, "শেয়ার করুন"))
             },
@@ -523,6 +537,11 @@ fun ModeSelectorCard(
 @Composable
 fun OutputResultCard(
     result: ConversionResult,
+    onlineEngineMode: OnlineEngineMode,
+    isOnlineTranslating: Boolean,
+    onlineFeedback: String?,
+    onlineRefinedResult: String?,
+    onRefineOnline: () -> Unit,
     onCopy: () -> Unit,
     onShare: () -> Unit,
     onSaveWord: (String, String) -> Unit
@@ -601,7 +620,7 @@ fun OutputResultCard(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Large Bengali Display
+            // Large Bengali Display (Offline / Standard)
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
@@ -611,20 +630,91 @@ fun OutputResultCard(
                     MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
                 )
             ) {
-                Text(
-                    text = if (result.convertedText.isBlank()) "কোনো ফলাফল নেই..." else result.convertedText,
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        lineHeight = 32.sp,
-                        letterSpacing = 0.sp
-                    ),
-                    color = if (result.convertedText.isBlank())
-                        MaterialTheme.colorScheme.outline
-                    else
-                        MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .testTag("converted_output_text")
-                )
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = if (result.convertedText.isBlank()) "কোনো ফলাফল নেই..." else result.convertedText,
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            lineHeight = 32.sp,
+                            letterSpacing = 0.sp
+                        ),
+                        color = if (result.convertedText.isBlank())
+                            MaterialTheme.colorScheme.outline
+                        else
+                            MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.testTag("converted_output_text")
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "অফলাইন ইঞ্জিন ফলাফল (০ মিলিসেকেন্ড)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
+
+            // Dedicated Online Cloud / AI Result (if generated)
+            if (onlineRefinedResult != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = PadmaTealPrimary.copy(alpha = 0.08f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.5.dp,
+                        PadmaTealPrimary.copy(alpha = 0.6f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Public,
+                                contentDescription = null,
+                                tint = PadmaTealPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = when (onlineEngineMode) {
+                                    OnlineEngineMode.GEMINI_AI -> "Gemini AI স্মার্ট ইঞ্জিন ফলাফল"
+                                    else -> "Google ক্লাউড ট্রান্সলিটারেশন ফলাফল"
+                                },
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = PadmaTealPrimary
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = onlineRefinedResult,
+                            style = MaterialTheme.typography.headlineSmall.copy(
+                                lineHeight = 32.sp,
+                                letterSpacing = 0.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.testTag("online_refined_output_text")
+                        )
+                    }
+                }
+            }
+
+            // Online feedback / status banner
+            if (onlineFeedback != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = onlineFeedback,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
             }
 
             // Spelling doctor notes if available
@@ -663,9 +753,47 @@ fun OutputResultCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Action Buttons Row
+            // Online Refine Action Button
+            OutlinedButton(
+                onClick = onRefineOnline,
+                enabled = !isOnlineTranslating && result.originalText.isNotBlank(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("refine_online_button"),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                if (isOnlineTranslating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("ক্লাউড API থেকে অনুবাদ আনা হচ্ছে...")
+                } else {
+                    Icon(
+                        Icons.Default.CloudSync,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = PadmaTealPrimary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = when (onlineEngineMode) {
+                            OnlineEngineMode.GEMINI_AI -> "Gemini AI দিয়ে রিফাইন করুন"
+                            OnlineEngineMode.ONLINE_CLOUD -> "Google ক্লাউড API দিয়ে রিফাইন করুন"
+                            else -> "অনলাইন ক্লাউড API দিয়ে রিফাইন করুন"
+                        },
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Action Buttons Row (Copy & Share)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)

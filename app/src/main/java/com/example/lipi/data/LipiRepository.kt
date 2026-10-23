@@ -43,11 +43,36 @@ class LipiRepository(private val context: Context) {
     )
     val transliterationStyle: StateFlow<TransliterationStyle> = _transliterationStyle.asStateFlow()
 
+    private val _onlineEngineMode = MutableStateFlow(
+        try {
+            val saved = prefs.getString("online_engine_mode", OnlineEngineMode.OFFLINE_ONLY.name)
+            OnlineEngineMode.valueOf(saved ?: OnlineEngineMode.OFFLINE_ONLY.name)
+        } catch (e: Exception) {
+            OnlineEngineMode.OFFLINE_ONLY
+        }
+    )
+    val onlineEngineMode: StateFlow<OnlineEngineMode> = _onlineEngineMode.asStateFlow()
+
+    private val _geminiApiKey = MutableStateFlow(
+        prefs.getString("custom_gemini_api_key", "") ?: ""
+    )
+    val geminiApiKey: StateFlow<String> = _geminiApiKey.asStateFlow()
+
     private val _customWordbook = MutableStateFlow<List<WordbookEntry>>(loadCustomWordbook())
     val customWordbook: StateFlow<List<WordbookEntry>> = _customWordbook.asStateFlow()
 
     private val _recentConversions = MutableStateFlow<List<ConversionResult>>(emptyList())
     val recentConversions: StateFlow<List<ConversionResult>> = _recentConversions.asStateFlow()
+
+    fun setOnlineEngineMode(mode: OnlineEngineMode) {
+        prefs.edit().putString("online_engine_mode", mode.name).apply()
+        _onlineEngineMode.value = mode
+    }
+
+    fun setGeminiApiKey(key: String) {
+        prefs.edit().putString("custom_gemini_api_key", key.trim()).apply()
+        _geminiApiKey.value = key.trim()
+    }
 
     fun setPersistentNotificationEnabled(enabled: Boolean) {
         prefs.edit().putBoolean("persistent_notification_enabled", enabled).apply()
@@ -294,6 +319,32 @@ class LipiRepository(private val context: Context) {
             WordbookEntry(banglish = "shagotom", bengali = "স্বাগতম", category = "সাধারণ")
         )
         saveCustomWordbook(defaultEntries)
+    }
+
+    /**
+     * Injects the curated extended chat dataset into the user's custom wordbook
+     */
+    fun loadTrainedChatDataset(): ImportResult {
+        val baseMap = _customWordbook.value.associateBy { it.banglish.lowercase() }.toMutableMap()
+        var addedCount = 0
+        for ((banglish, bengali) in LipiDictionary.EXTENDED_TRAINED_CHAT_DATA) {
+            val key = banglish.lowercase()
+            if (!baseMap.containsKey(key)) {
+                baseMap[key] = WordbookEntry(
+                    banglish = key,
+                    bengali = bengali,
+                    category = "ট্রেইন ডাটা"
+                )
+                addedCount++
+            }
+        }
+        val updated = baseMap.values.toList()
+        saveCustomWordbook(updated)
+        return ImportResult(
+            addedCount = addedCount,
+            skippedCount = LipiDictionary.EXTENDED_TRAINED_CHAT_DATA.size - addedCount,
+            totalEntries = updated.size
+        )
     }
 
     fun addRecentConversion(result: ConversionResult) {
