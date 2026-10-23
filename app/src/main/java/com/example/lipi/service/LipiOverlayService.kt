@@ -151,12 +151,20 @@ class LipiOverlayService : Service() {
                     val clipText = clipboardManager?.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()
                     if (!clipText.isNullOrBlank()) {
                         currentText = clipText
+                        val textSample = if (clipText.length > 800) clipText.take(800) else clipText
+                        val hasBengali = textSample.any { it in '\u0980'..'\u09FF' }
+                        val hasBanglish = MixedScriptTokenizer.hasBanglishContent(textSample)
+                        if (hasBengali && !hasBanglish) {
+                            isReverseMode = true
+                        } else if (hasBanglish && !hasBengali) {
+                            isReverseMode = false
+                        }
                         convertedBengali = processText(clipText)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
-                showTranslationPopup(centerX, popupY)
+                showTranslationPopup(centerX, popupY, autoPasteFromClipboard = true)
                 updatePersistentNotification()
             }
             ACTION_TOGGLE_BADGE -> {
@@ -231,6 +239,7 @@ class LipiOverlayService : Service() {
             currentText = clip
             val convertDigits = prefs.getBoolean("convert_digits", false)
             val isReverse = hasBengali && !hasBanglish
+            isReverseMode = isReverse
             val mode = if (isReverse) com.example.lipi.data.LipiMode.BENGALI_TO_BANGLISH else com.example.lipi.data.LipiMode.SMART_AUTO
             val conversion = MixedScriptTokenizer.process(
                 inputText = textSample,
@@ -588,20 +597,28 @@ class LipiOverlayService : Service() {
     }
 
     private fun onBadgeClicked(anchorX: Int, anchorY: Int) {
-        // Read latest clipboard if available
+        // Read latest clipboard and auto-transliterate
         try {
             val clipText = clipboardManager?.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()
             if (!clipText.isNullOrBlank()) {
                 currentText = clipText
+                val textSample = if (clipText.length > 800) clipText.take(800) else clipText
+                val hasBengali = textSample.any { it in '\u0980'..'\u09FF' }
+                val hasBanglish = MixedScriptTokenizer.hasBanglishContent(textSample)
+                if (hasBengali && !hasBanglish) {
+                    isReverseMode = true
+                } else if (hasBanglish && !hasBengali) {
+                    isReverseMode = false
+                }
                 convertedBengali = processText(clipText)
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        showTranslationPopup(anchorX, anchorY)
+        showTranslationPopup(anchorX, anchorY, autoPasteFromClipboard = true)
     }
 
-    private fun showTranslationPopup(anchorX: Int, anchorY: Int) {
+    private fun showTranslationPopup(anchorX: Int, anchorY: Int, autoPasteFromClipboard: Boolean = true) {
         if (translationPopupView != null) {
             dismissTranslationPopup()
             return
@@ -714,6 +731,11 @@ class LipiOverlayService : Service() {
             }
             if (currentText.isNotBlank()) {
                 setText(currentText)
+                try {
+                    setSelection(currentText.length)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
         }
         activeInputField = inputField
@@ -1012,6 +1034,52 @@ class LipiOverlayService : Service() {
             windowManager?.addView(translationPopupView, windowLayoutParams)
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+
+        if (autoPasteFromClipboard) {
+            var toastShown = false
+            if (currentText.isNotBlank()) {
+                Toast.makeText(this@LipiOverlayService, "✓ ক্লিপবোর্ড থেকে স্বয়ংক্রিয় পেস্ট সম্পন্ন!", Toast.LENGTH_SHORT).show()
+                toastShown = true
+            }
+            rootOverlay.post {
+                try {
+                    val clip = clipboardManager?.primaryClip
+                    if (clip != null && clip.itemCount > 0) {
+                        val clipText = clip.getItemAt(0)?.coerceToText(this@LipiOverlayService)?.toString()
+                        if (!clipText.isNullOrBlank() && (inputField.text.isNullOrBlank() || inputField.text.toString() != clipText)) {
+                            val textSample = if (clipText.length > 800) clipText.take(800) else clipText
+                            val hasBengali = textSample.any { it in '\u0980'..'\u09FF' }
+                            val hasBanglish = MixedScriptTokenizer.hasBanglishContent(textSample)
+                            if (hasBengali && !hasBanglish) {
+                                isReverseMode = true
+                            } else if (hasBanglish && !hasBengali) {
+                                isReverseMode = false
+                            }
+                            updateToggleAppearance()
+                            currentText = clipText
+                            inputField.setText(clipText)
+                            try {
+                                inputField.setSelection(clipText.length)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                            convertedBengali = processText(clipText)
+                            translationText.text = if (convertedBengali.isNotBlank())
+                                convertedBengali
+                            else if (isReverseMode)
+                                "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..."
+                            else
+                                "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
+                            if (!toastShown) {
+                                Toast.makeText(this@LipiOverlayService, "✓ ক্লিপবোর্ড থেকে স্বয়ংক্রিয় পেস্ট সম্পন্ন!", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         }
     }
 

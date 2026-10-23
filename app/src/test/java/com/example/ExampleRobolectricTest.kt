@@ -120,4 +120,14 @@ class ExampleRobolectricTest {
         composeTestRule.onNodeWithTag("single_data_entry_banglish_input").assertExists()
         composeTestRule.onNodeWithTag("save_single_data_entry_button").assertExists()
     }
+
+    @Test
+    fun `test clipboard transliteration auto detection`() {
+        val clipBanglish = "kemon acho"
+        val hasBanglish = com.example.lipi.engine.MixedScriptTokenizer.hasBanglishContent(clipBanglish)
+        assertTrue(hasBanglish)
+
+        val conversion = com.example.lipi.engine.MixedScriptTokenizer.process(clipBanglish)
+        assertTrue(conversion.convertedText.contains("কেমন আছো"))
+    }
 }
