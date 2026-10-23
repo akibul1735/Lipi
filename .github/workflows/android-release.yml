@@ -65,7 +65,7 @@ jobs:
               -storepass "android" -keypass "android" -dname "CN=Lipi, OU=Lipi, O=Lipi, L=Dhaka, C=BD"
           fi
 
-      - name: Build Android APKs (Release & Debug)
+      - name: Build Android Release APK
         run: |
           STORE_PWD="${{ secrets.STORE_PASSWORD }}"
           [ -z "$STORE_PWD" ] && STORE_PWD="android"
@@ -76,43 +76,48 @@ jobs:
           export KEY_PASSWORD="$KEY_PWD"
           export KEYSTORE_PATH="$GITHUB_WORKSPACE/my-upload-key.jks"
 
-          echo "Building Release and Debug APKs..."
-          ./gradlew assembleRelease assembleDebug --no-daemon --stacktrace
+          echo "Building Release APK..."
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
           BUILD_TOOLS_DIR=$(find $ANDROID_HOME/build-tools -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
+          echo "Using Android Build Tools at: $BUILD_TOOLS_DIR"
 
+          INPUT_APK=""
           if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
-            cp app/build/outputs/apk/release/app-release.apk lipi_release.apk
+            INPUT_APK="app/build/outputs/apk/release/app-release.apk"
           elif [ -f "app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
-            echo "Signing unsigned release APK with apksigner..."
-            $BUILD_TOOLS_DIR/apksigner sign --ks my-upload-key.jks --ks-key-alias upload \
-              --ks-pass pass:"$STORE_PASSWORD" --key-pass pass:"$KEY_PASSWORD" \
-              --out lipi_release.apk app/build/outputs/apk/release/app-release-unsigned.apk
+            INPUT_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
           fi
 
-          if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
-            cp app/build/outputs/apk/debug/app-debug.apk lipi_debug.apk
+          if [ -z "$INPUT_APK" ]; then
+            echo "ERROR: Release APK not generated!"
+            exit 1
           fi
 
-      - name: Verify APK Signatures
+          echo "Aligning APK with zipalign..."
+          $BUILD_TOOLS_DIR/zipalign -p -f 4 "$INPUT_APK" Lipi-Aligned.apk
+          $BUILD_TOOLS_DIR/zipalign -c -v 4 Lipi-Aligned.apk || true
+
+          echo "Signing APK with apksigner (v1, v2, v3)..."
+          $BUILD_TOOLS_DIR/apksigner sign --ks my-upload-key.jks --ks-key-alias upload \
+            --ks-pass pass:"$STORE_PASSWORD" --key-pass pass:"$KEY_PASSWORD" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out Lipi-Release.apk Lipi-Aligned.apk
+
+          rm -f Lipi-Aligned.apk
+
+      - name: Verify APK Signatures & Alignment
         run: |
           BUILD_TOOLS_DIR=$(find $ANDROID_HOME/build-tools -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
-          if [ -f "lipi_release.apk" ]; then
-            echo "=== Verifying lipi_release.apk ==="
-            $BUILD_TOOLS_DIR/apksigner verify -v lipi_release.apk
-          fi
-          if [ -f "lipi_debug.apk" ]; then
-            echo "=== Verifying lipi_debug.apk ==="
-            $BUILD_TOOLS_DIR/apksigner verify -v lipi_debug.apk
-          fi
+          echo "=== Verifying Lipi-Release.apk ==="
+          $BUILD_TOOLS_DIR/apksigner verify --verbose Lipi-Release.apk
+          $BUILD_TOOLS_DIR/zipalign -c -v 4 Lipi-Release.apk
 
-      - name: Upload APKs as GitHub Artifacts
+      - name: Upload Release APK as GitHub Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lipi-apks
-          path: |
-            lipi_release.apk
-            lipi_debug.apk
+          name: Lipi-Release-APK
+          path: Lipi-Release.apk
           retention-days: 14
 
       - name: Extract App Version
@@ -128,8 +133,7 @@ jobs:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || env.VERSION }}
           name: Lipi (লিপি) ${{ github.ref_type == 'tag' && github.ref_name || env.VERSION }}
           files: |
-            lipi_release.apk
-            lipi_debug.apk
+            Lipi-Release.apk
           draft: false
           prerelease: false
           generate_release_notes: true
