@@ -100,6 +100,13 @@ fun SettingsScreen(
     val convertDigits by viewModel.convertDigitsToBengali.collectAsState()
     val customWordbook by viewModel.customWordbook.collectAsState()
 
+    val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager }
+    val isIgnoringBatteryOptimizations = remember {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
+        } else true
+    }
+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -169,6 +176,16 @@ fun SettingsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // =========================================================================
+        // GROUP 1: Floating Assistant & Notification Bar (ভাসমান সহকারী ও নোটিফিকেশন)
+        // =========================================================================
+        SettingsGroupHeader(
+            icon = Icons.Default.TouchApp,
+            title = "ভাসমান সহকারী ও নোটিফিকেশন",
+            subtitle = "স্ক্রিন ওভারলে সহকারী ও নোটিফিকেশন বার নিয়ন্ত্রণ",
+            badgeText = if (isFloatingEnabled) "সক্রিয়" else null
+        )
+
         // Master Floating Switch Card
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -420,80 +437,6 @@ fun SettingsScreen(
             }
         }
 
-        // Battery Optimization & Long-running Service Protection Card
-        val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager }
-        val isIgnoringBatteryOptimizations = remember {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
-            } else true
-        }
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isIgnoringBatteryOptimizations)
-                    MaterialTheme.colorScheme.surface
-                else
-                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = if (isIgnoringBatteryOptimizations) Icons.Default.CheckCircle else Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = if (isIgnoringBatteryOptimizations) PadmaTealPrimary else MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "সার্বক্ষণিক নোটিফিকেশন ও ব্যাকগ্রাউন্ড রক্ষা",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = if (isIgnoringBatteryOptimizations)
-                        "✓ ব্যাটারি অপটিমাইজেশন বন্ধ রয়েছে। লিপিকে ব্যাকগ্রাউন্ডে অ্যান্ড্রয়েড সিস্টেম বা OEM সেভার কিল করবে না এবং নোটিফিকেশন বার সার্বক্ষণিক দৃশ্যমান থাকবে।"
-                    else
-                        "কিছু ডিভাইসে (Xiaomi, Samsung, Oppo, Vivo, Realme) কিছুক্ষণ পর সিস্টেম ব্যাকগ্রাউন্ড সার্ভিস ও নোটিফিকেশন বন্ধ করে দেয়। নোটিফিকেশন ও অনুবাদ বল সর্বদা চালু রাখতে ব্যাটারি অপটিমাইজেশন বন্ধ (Unrestricted) করুন।",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (!isIgnoringBatteryOptimizations) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        onClick = {
-                            val intent = Intent().apply {
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                                    action = Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
-                                } else {
-                                    action = Settings.ACTION_SETTINGS
-                                }
-                            }
-                            try {
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "সেটিংস খোলা সম্ভব হয়নি", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("ব্যাটারি আনরেস্ট্রিকটেড (Unrestricted) করুন", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-
         // 3-Step Simple Copy & Translate Guide
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -535,68 +478,15 @@ fun SettingsScreen(
             }
         }
 
-        // Overlay Permission Status Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Text(
-                    text = "সিস্টেম অনুমতি ও নিরাপত্তা",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                PermissionStatusRow(
-                    title = "ভাসমান উইন্ডো অনুমতি (Display over other apps)",
-                    description = "হোয়াটসঅ্যাপ বা মেসেঞ্জারের ওপর 'ল' ব্যাজ ভাসানোর জন্য প্রয়োজন।",
-                    isGranted = overlayGranted,
-                    onActionClick = {
-                        val intent = Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:${context.packageName}")
-                        )
-                        try {
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "অনুমতি সেটিংস খোলা যাচ্ছে না", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                )
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Safe Mode",
-                        tint = Color(0xFF00A896),
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Column {
-                        Text(
-                            text = "প্লে প্রোটেক্ট নিরাপদ কপি মোড",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "কোনো সংবেদনশীল পারমিশন ছাড়াই নিরাপদ ওভারলে ও কপি-পেস্টের মাধ্যমে কাজ করে। গুগল প্লে প্রোটেক্টে কোনো ব্লক নেই।",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
+        // =========================================================================
+        // GROUP 2: Translation Engine & Formatting (রূপান্তর ইঞ্জিন ও ফরম্যাটিং)
+        // =========================================================================
+        SettingsGroupHeader(
+            icon = Icons.Default.Translate,
+            title = "রূপান্তর ইঞ্জিন ও ফরম্যাটিং",
+            subtitle = "বাংলা ও ইংরেজি ভাষার আচরণ এবং অটোমেশন সেটিংস",
+            badgeText = "v5 ইঞ্জিন"
+        )
 
         // User-Requested Transliteration Options:
         // 1. সকল টেক্সট বাংলায় (কোন কিছুই ইংরেজিতে নয়, সেসব শব্দ ইংরেজি হলেও বাংলাতে প্রচলিত, সেসবও বাংলাতে দেখাবে: app - অ্যাপ, 5pm - বিকাল পাঁচটায়, ইত্যাদি)
@@ -862,6 +752,16 @@ fun SettingsScreen(
                 }
             }
         }
+
+        // =========================================================================
+        // GROUP 3: Custom Wordbook & Data Management (কাস্টম শব্দকোষ ও ডাটা ব্যবস্থাপনা)
+        // =========================================================================
+        SettingsGroupHeader(
+            icon = Icons.AutoMirrored.Filled.PlaylistAdd,
+            title = "কাস্টম শব্দকোষ ও ডাটা",
+            subtitle = "ব্যক্তিগত বাংলিশ শব্দের অর্থ তৈরি, সংরক্ষণ ও আমদানি-রপ্তানি",
+            badgeText = "${customWordbook.size}টি শব্দ"
+        )
 
         // Custom User Wordbook & Data Management (Single Entry, Bulk File Import, Export, Format Guide)
         val filteredWordbook = customWordbook.filter {
@@ -1793,6 +1693,146 @@ pdf=পিডিএফ"""
             )
         }
 
+        // =========================================================================
+        // GROUP 4: System, Permissions & Battery Protection (সিস্টেম অনুমতি ও ব্যাটারি সুরক্ষা)
+        // =========================================================================
+        SettingsGroupHeader(
+            icon = Icons.Default.Lock,
+            title = "সিস্টেম অনুমতি ও ব্যাটারি সুরক্ষা",
+            subtitle = "ব্যাকগ্রাউন্ডে সার্বক্ষণিক সচল রাখা ও সিস্টেম নিরাপত্তা",
+            badgeText = if (isIgnoringBatteryOptimizations) "সুরক্ষিত" else "সতর্কতা"
+        )
+
+        // Overlay Permission Status Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Text(
+                    text = "সিস্টেম অনুমতি ও নিরাপত্তা",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                PermissionStatusRow(
+                    title = "ভাসমান উইন্ডো অনুমতি (Display over other apps)",
+                    description = "হোয়াটসঅ্যাপ বা মেসেঞ্জারের ওপর 'ল' ব্যাজ ভাসানোর জন্য প্রয়োজন।",
+                    isGranted = overlayGranted,
+                    onActionClick = {
+                        val intent = Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                        try {
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "অনুমতি সেটিংস খোলা যাচ্ছে না", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = "Safe Mode",
+                        tint = Color(0xFF00A896),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "প্লে প্রোটেক্ট নিরাপদ কপি মোড",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "কোনো সংবেদনশীল পারমিশন ছাড়াই নিরাপদ ওভারলে ও কপি-পেস্টের মাধ্যমে কাজ করে। গুগল প্লে প্রোটেক্টে কোনো ব্লক নেই।",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        // Battery Optimization & Long-running Service Protection Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isIgnoringBatteryOptimizations)
+                    MaterialTheme.colorScheme.surface
+                else
+                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (isIgnoringBatteryOptimizations) Icons.Default.CheckCircle else Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = if (isIgnoringBatteryOptimizations) PadmaTealPrimary else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "সার্বক্ষণিক নোটিফিকেশন ও ব্যাকগ্রাউন্ড রক্ষা",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = if (isIgnoringBatteryOptimizations)
+                        "✓ ব্যাটারি অপটিমাইজেশন বন্ধ রয়েছে। লিপিকে ব্যাকগ্রাউন্ডে অ্যান্ড্রয়েড সিস্টেম বা OEM সেভার কিল করবে না এবং নোটিফিকেশন বার সার্বক্ষণিক দৃশ্যমান থাকবে।"
+                    else
+                        "কিছু ডিভাইসে (Xiaomi, Samsung, Oppo, Vivo, Realme) কিছুক্ষণ পর সিস্টেম ব্যাকগ্রাউন্ড সার্ভিস ও নোটিফিকেশন বন্ধ করে দেয়। নোটিফিকেশন ও অনুবাদ বল সর্বদা চালু রাখতে ব্যাটারি অপটিমাইজেশন বন্ধ (Unrestricted) করুন।",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (!isIgnoringBatteryOptimizations) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            val intent = Intent().apply {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                                    action = Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+                                } else {
+                                    action = Settings.ACTION_SETTINGS
+                                }
+                            }
+                            try {
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "সেটিংস খোলা সম্ভব হয়নি", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("ব্যাটারি আনরেস্ট্রিকটেড (Unrestricted) করুন", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
         // Privacy & Offline Security Card
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -1821,6 +1861,77 @@ pdf=পিডিএফ"""
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     lineHeight = 20.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsGroupHeader(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    badgeText: String? = null
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp, bottom = 2.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(PadmaTealPrimary.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = PadmaTealPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (badgeText != null) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = PadmaTealPrimary.copy(alpha = 0.18f)
+                        ) {
+                            Text(
+                                text = badgeText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = PadmaTealPrimary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
