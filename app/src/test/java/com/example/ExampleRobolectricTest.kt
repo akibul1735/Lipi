@@ -146,4 +146,35 @@ class ExampleRobolectricTest {
         val conversion = com.example.lipi.engine.MixedScriptTokenizer.process(clipBanglish)
         assertTrue(conversion.convertedText.contains("কেমন আছো"))
     }
+
+    @Test
+    fun `test gemini model selection and persistence`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = LipiRepository(context)
+        val viewModel = LipiViewModel(repository)
+
+        // Default model should be gemini-2.5-flash
+        assertEquals("gemini-2.5-flash", repository.geminiModel.value)
+        assertEquals("gemini-2.5-flash", viewModel.geminiModel.value)
+
+        // Update to gemini-2.5-pro
+        viewModel.setGeminiModel("gemini-2.5-pro")
+        assertEquals("gemini-2.5-pro", repository.geminiModel.value)
+        assertEquals("gemini-2.5-pro", viewModel.geminiModel.value)
+
+        // Update to custom model
+        viewModel.setGeminiModel("gemini-2.0-flash-lite")
+        assertEquals("gemini-2.0-flash-lite", repository.geminiModel.value)
+        assertEquals("gemini-2.0-flash-lite", viewModel.geminiModel.value)
+
+        // Reset with empty should fallback safely to default
+        viewModel.setGeminiModel("")
+        assertEquals("gemini-2.5-flash", repository.geminiModel.value)
+
+        // Verify available models contains latest models
+        val availableModels = com.example.lipi.engine.LipiOnlineEngine.AVAILABLE_GEMINI_MODELS
+        assertTrue(availableModels.any { it.modelId == "gemini-2.5-flash" })
+        assertTrue(availableModels.any { it.modelId == "gemini-2.5-pro" })
+        assertTrue(availableModels.any { it.modelId == "gemini-2.0-flash" })
+    }
 }

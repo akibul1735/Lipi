@@ -5,6 +5,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Lock
@@ -611,22 +614,30 @@ fun TransliterationStyleBottomSheet(
 }
 
 /**
- * Value Selection Modal Bottom Sheet for Online / Cloud Engine Mode.
+ * Value Selection Modal Bottom Sheet for Online / Cloud Engine Mode and Gemini Models.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OnlineEngineBottomSheet(
     currentMode: OnlineEngineMode,
     currentApiKey: String,
+    currentModel: String = "gemini-2.5-flash",
     onModeSelected: (OnlineEngineMode) -> Unit,
     onApiKeySaved: (String) -> Unit,
+    onModelSelected: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var apiKeyInput by remember(currentApiKey) { mutableStateOf(currentApiKey) }
+    var selectedModel by remember(currentModel) { mutableStateOf(currentModel) }
+    var customModelInput by remember { mutableStateOf("") }
+    var isCustomModelSelected by remember {
+        mutableStateOf(LipiOnlineEngine.AVAILABLE_GEMINI_MODELS.none { it.modelId == currentModel })
+    }
     var isTesting by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -636,8 +647,9 @@ fun OnlineEngineBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(scrollState)
                 .padding(horizontal = 20.dp, vertical = 8.dp)
-                .padding(bottom = 28.dp),
+                .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Column {
@@ -751,7 +763,7 @@ fun OnlineEngineBottomSheet(
                 border = BorderStroke(if (isGemini) 1.5.dp else 1.dp, if (isGemini) PadmaTealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
                 shape = RoundedCornerShape(14.dp)
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.Top) {
                         Box(
                             modifier = Modifier
@@ -765,12 +777,18 @@ fun OnlineEngineBottomSheet(
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
-                            Text(
-                                text = "৩. Gemini AI স্মার্ট ইঞ্জিন",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isGemini) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "৩. Gemini AI স্মার্ট ইঞ্জিন",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isGemini) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)) {
+                                    Text("Neural AI", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                }
+                            }
                             Text(
                                 text = "উন্নত এআই কনটেক্সট মডেল — চলিত ভাষা, আধুনিক স্ল্যাং ও বানানের শতভাগ শুদ্ধ রূপান্তর।",
                                 style = MaterialTheme.typography.bodySmall,
@@ -780,25 +798,215 @@ fun OnlineEngineBottomSheet(
                     }
 
                     if (isGemini) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        OutlinedTextField(
-                            value = apiKeyInput,
-                            onValueChange = { apiKeyInput = it },
-                            label = { Text("Gemini API Key (ঐচ্ছিক)") },
-                            placeholder = { Text("Google AI Studio কী পেস্ট করুন") },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
-                            singleLine = true,
-                            trailingIcon = {
-                                Button(
-                                    onClick = { onApiKeySaved(apiKeyInput) },
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.padding(end = 4.dp)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+
+                        // API Key Input
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "Gemini API Key:",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            OutlinedTextField(
+                                value = apiKeyInput,
+                                onValueChange = { apiKeyInput = it },
+                                label = { Text("API Key (Google AI Studio)") },
+                                placeholder = { Text("AIzaSy...") },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                singleLine = true,
+                                trailingIcon = {
+                                    Button(
+                                        onClick = { onApiKeySaved(apiKeyInput) },
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.padding(end = 4.dp)
+                                    ) {
+                                        Text("সেভ", fontSize = 12.sp)
+                                    }
+                                }
+                            )
+                            Text(
+                                text = "Google AI Studio থেকে বিনামূল্যে নিজস্ব Gemini API Key তৈরি করে ব্যবহার করতে পারেন।",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+
+                        // Model Selection
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = PadmaTealPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "সর্বশেষ Gemini মডেল নির্বাচন করুন:",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Text(
+                                text = "দিন দিন নতুন মডেল আসার সাথে সাথে আপনার পছন্দের মডেলটি নির্বাচন বা কাস্টমাইজ করুন:",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            // Predefined Models
+                            LipiOnlineEngine.AVAILABLE_GEMINI_MODELS.forEach { modelInfo ->
+                                val isSelected = !isCustomModelSelected && selectedModel == modelInfo.modelId
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            isCustomModelSelected = false
+                                            selectedModel = modelInfo.modelId
+                                            onModelSelected(modelInfo.modelId)
+                                        },
+                                    color = if (isSelected) PadmaTealPrimary.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surface,
+                                    border = BorderStroke(
+                                        if (isSelected) 1.5.dp else 1.dp,
+                                        if (isSelected) PadmaTealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                                    ),
+                                    shape = RoundedCornerShape(10.dp)
                                 ) {
-                                    Text("সেভ", fontSize = 12.sp)
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(top = 2.dp)
+                                                .size(18.dp)
+                                                .clip(CircleShape)
+                                                .border(2.dp, if (isSelected) PadmaTealPrimary else MaterialTheme.colorScheme.outline, CircleShape)
+                                                .background(if (isSelected) PadmaTealPrimary else Color.Transparent),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isSelected) Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
+                                        }
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = modelInfo.displayName,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSelected) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = if (modelInfo.isRecommended) PadmaTealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+                                                ) {
+                                                    Text(
+                                                        text = modelInfo.badge,
+                                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                                        color = if (modelInfo.isRecommended) PadmaTealPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = "ID: ${modelInfo.modelId}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = modelInfo.description,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                lineHeight = 16.sp
+                                            )
+                                        }
+                                    }
                                 }
                             }
-                        )
+
+                            // Custom Model Option
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        isCustomModelSelected = true
+                                    },
+                                color = if (isCustomModelSelected) PadmaTealPrimary.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(
+                                    if (isCustomModelSelected) 1.5.dp else 1.dp,
+                                    if (isCustomModelSelected) PadmaTealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                                ),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(18.dp)
+                                                .clip(CircleShape)
+                                                .border(2.dp, if (isCustomModelSelected) PadmaTealPrimary else MaterialTheme.colorScheme.outline, CircleShape)
+                                                .background(if (isCustomModelSelected) PadmaTealPrimary else Color.Transparent),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isCustomModelSelected) Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
+                                        }
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column {
+                                            Text(
+                                                text = "কাস্টম মডেল নাম (Custom Model Entry)",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isCustomModelSelected) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = "ভবিষ্যতে আসা নতুন মডেল বা এক্সপেরিমেন্টাল মডেল আইডি টাইপ করুন",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+
+                                    if (isCustomModelSelected) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        OutlinedTextField(
+                                            value = customModelInput.ifEmpty { if (LipiOnlineEngine.AVAILABLE_GEMINI_MODELS.none { it.modelId == selectedModel }) selectedModel else "" },
+                                            onValueChange = { customModelInput = it },
+                                            label = { Text("মডেল আইডি লিখুন") },
+                                            placeholder = { Text("যেমন: gemini-2.0-flash-lite") },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(8.dp),
+                                            singleLine = true,
+                                            trailingIcon = {
+                                                Button(
+                                                    onClick = {
+                                                        val clean = customModelInput.trim()
+                                                        if (clean.isNotEmpty()) {
+                                                            selectedModel = clean
+                                                            onModelSelected(clean)
+                                                        }
+                                                    },
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    modifier = Modifier.padding(end = 4.dp)
+                                                ) {
+                                                    Text("প্রয়োগ", fontSize = 11.sp)
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -810,9 +1018,22 @@ fun OnlineEngineBottomSheet(
                         isTesting = true
                         testResult = "টেস্ট করা হচ্ছে..."
                         val provider = if (currentMode == OnlineEngineMode.GEMINI_AI) LipiOnlineEngine.Provider.GEMINI_AI else LipiOnlineEngine.Provider.GOOGLE_INPUT_TOOLS
-                        val res = LipiOnlineEngine.transliterateOnline("Khawya suru korli naki abr??", provider, apiKeyInput)
+                        val res = LipiOnlineEngine.transliterateOnline(
+                            inputText = "Khawya suru korli naki abr??",
+                            provider = provider,
+                            customGeminiApiKey = apiKeyInput,
+                            geminiModel = selectedModel
+                        )
                         isTesting = false
-                        res.onSuccess { testResult = "সফল! রূপান্তর: $it" }.onFailure { testResult = "ত্রুটি: ${it.message}" }
+                        res.onSuccess {
+                            testResult = if (currentMode == OnlineEngineMode.GEMINI_AI) {
+                                "সফল! [মডেল: $selectedModel]\nরূপান্তর: $it"
+                            } else {
+                                "সফল! রূপান্তর: $it"
+                            }
+                        }.onFailure {
+                            testResult = "ত্রুটি: ${it.message}"
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -825,12 +1046,22 @@ fun OnlineEngineBottomSheet(
                 } else {
                     Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(16.dp), tint = PadmaTealPrimary)
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("অনলাইন কানেকশন টেস্ট করুন (Test API)")
+                    Text(
+                        if (currentMode == OnlineEngineMode.GEMINI_AI) {
+                            "অনলাইন কানেকশন টেস্ট ($selectedModel)"
+                        } else {
+                            "অনলাইন কানেকশন টেস্ট করুন (Test API)"
+                        }
+                    )
                 }
             }
 
             if (testResult != null) {
-                Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), modifier = Modifier.fillMaxWidth()) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text(text = testResult!!, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(10.dp))
                 }
             }

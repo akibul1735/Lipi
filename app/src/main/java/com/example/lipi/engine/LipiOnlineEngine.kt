@@ -37,13 +37,53 @@ object LipiOnlineEngine {
         )
     }
 
+    data class GeminiModelInfo(
+        val modelId: String,
+        val displayName: String,
+        val badge: String,
+        val description: String,
+        val isRecommended: Boolean = false
+    )
+
+    val AVAILABLE_GEMINI_MODELS = listOf(
+        GeminiModelInfo(
+            modelId = "gemini-2.5-flash",
+            displayName = "Gemini 2.5 Flash",
+            badge = "ডিফল্ট ও সুপারিশকৃত",
+            description = "সর্বোচ্চ গতি ও আধুনিক কনটেক্সট — রিয়েলটাইম চ্যাট ও বার্তা রূপান্তরের জন্য সেরা",
+            isRecommended = true
+        ),
+        GeminiModelInfo(
+            modelId = "gemini-2.5-pro",
+            displayName = "Gemini 2.5 Pro",
+            badge = "উচ্চ বুদ্ধিমত্তা",
+            description = "জটিল বাক্য, ব্যাকরণগত শুদ্ধতা ও গভীর অর্থ বিশ্লেষণের জন্য শক্তিশালী",
+            isRecommended = false
+        ),
+        GeminiModelInfo(
+            modelId = "gemini-2.0-flash",
+            displayName = "Gemini 2.0 Flash",
+            badge = "স্টেবল",
+            description = "আল্ট্রা লো-ল্যাটেন্সি ও উচ্চ নির্ভরযোগ্যতা",
+            isRecommended = false
+        ),
+        GeminiModelInfo(
+            modelId = "gemini-1.5-flash",
+            displayName = "Gemini 1.5 Flash",
+            badge = "ক্লাসিক",
+            description = "স্ট্যান্ডার্ড লাইটওয়েট সংস্করণ ও বিশ্বস্ত কার্যকারিতা",
+            isRecommended = false
+        )
+    )
+
     /**
      * Translates or transliterates Banglish to authentic Bengali using online cloud/AI services.
      */
     suspend fun transliterateOnline(
         inputText: String,
         provider: Provider = Provider.GOOGLE_INPUT_TOOLS,
-        customGeminiApiKey: String = ""
+        customGeminiApiKey: String = "",
+        geminiModel: String = "gemini-2.5-flash"
     ): Result<String> = withContext(Dispatchers.IO) {
         val trimmed = inputText.trim()
         if (trimmed.isEmpty()) return@withContext Result.success(inputText)
@@ -51,7 +91,7 @@ object LipiOnlineEngine {
         try {
             when (provider) {
                 Provider.GOOGLE_INPUT_TOOLS -> transliterateWithGoogleInputTools(trimmed)
-                Provider.GEMINI_AI -> transliterateWithGemini(trimmed, customGeminiApiKey)
+                Provider.GEMINI_AI -> transliterateWithGemini(trimmed, customGeminiApiKey, geminiModel)
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -115,7 +155,11 @@ object LipiOnlineEngine {
     /**
      * Gemini AI contextual Banglish-to-Bengali translation.
      */
-    private fun transliterateWithGemini(text: String, customApiKey: String): Result<String> {
+    private fun transliterateWithGemini(
+        text: String,
+        customApiKey: String,
+        model: String = "gemini-2.5-flash"
+    ): Result<String> {
         val effectiveApiKey = when {
             customApiKey.isNotBlank() -> customApiKey.trim()
             try { BuildConfig.GEMINI_API_KEY.isNotBlank() } catch (_: Exception) { false } -> BuildConfig.GEMINI_API_KEY
@@ -126,8 +170,10 @@ object LipiOnlineEngine {
             return Result.failure(Exception("Gemini API Key পাওয়া যায়নি। সেটিংসে আপনার API Key যুক্ত করুন অথবা Google ক্লাউড ইঞ্জিন ব্যবহার করুন।"))
         }
 
+        val chosenModel = model.trim().ifEmpty { "gemini-2.5-flash" }
+
         return try {
-            val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$effectiveApiKey"
+            val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$chosenModel:generateContent?key=$effectiveApiKey"
             val url = URL(endpoint)
             val connection = url.openConnection() as HttpURLConnection
             connection.requestMethod = "POST"

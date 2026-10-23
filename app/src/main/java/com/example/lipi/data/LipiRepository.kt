@@ -58,6 +58,11 @@ class LipiRepository(private val context: Context) {
     )
     val geminiApiKey: StateFlow<String> = _geminiApiKey.asStateFlow()
 
+    private val _geminiModel = MutableStateFlow(
+        prefs.getString("custom_gemini_model", "gemini-2.5-flash") ?: "gemini-2.5-flash"
+    )
+    val geminiModel: StateFlow<String> = _geminiModel.asStateFlow()
+
     private val _customWordbook = MutableStateFlow<List<WordbookEntry>>(loadCustomWordbook())
     val customWordbook: StateFlow<List<WordbookEntry>> = _customWordbook.asStateFlow()
 
@@ -72,6 +77,12 @@ class LipiRepository(private val context: Context) {
     fun setGeminiApiKey(key: String) {
         prefs.edit().putString("custom_gemini_api_key", key.trim()).apply()
         _geminiApiKey.value = key.trim()
+    }
+
+    fun setGeminiModel(model: String) {
+        val cleanModel = model.trim().ifEmpty { "gemini-2.5-flash" }
+        prefs.edit().putString("custom_gemini_model", cleanModel).apply()
+        _geminiModel.value = cleanModel
     }
 
     fun setPersistentNotificationEnabled(enabled: Boolean) {

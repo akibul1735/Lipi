@@ -40,6 +40,7 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
     val transliterationStyle: StateFlow<TransliterationStyle> = repository.transliterationStyle
     val onlineEngineMode: StateFlow<OnlineEngineMode> = repository.onlineEngineMode
     val geminiApiKey: StateFlow<String> = repository.geminiApiKey
+    val geminiModel: StateFlow<String> = repository.geminiModel
 
     private val _isOnlineTranslating = MutableStateFlow(false)
     val isOnlineTranslating: StateFlow<Boolean> = _isOnlineTranslating.asStateFlow()
@@ -101,6 +102,10 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
         repository.setGeminiApiKey(key)
     }
 
+    fun setGeminiModel(model: String) {
+        repository.setGeminiModel(model)
+    }
+
     fun loadTrainedChatDataset(): com.example.lipi.data.ImportResult {
         return repository.loadTrainedChatDataset()
     }
@@ -125,7 +130,8 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
             val result = LipiOnlineEngine.transliterateOnline(
                 inputText = currentInput,
                 provider = provider,
-                customGeminiApiKey = repository.geminiApiKey.value
+                customGeminiApiKey = repository.geminiApiKey.value,
+                geminiModel = repository.geminiModel.value
             )
             _isOnlineTranslating.value = false
             result.onSuccess { converted ->

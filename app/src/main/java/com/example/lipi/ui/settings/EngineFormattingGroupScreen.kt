@@ -60,6 +60,7 @@ fun EngineFormattingGroupScreen(
     val transliterationStyle by viewModel.transliterationStyle.collectAsState()
     val onlineEngineMode by viewModel.onlineEngineMode.collectAsState()
     val geminiApiKey by viewModel.geminiApiKey.collectAsState()
+    val geminiModel by viewModel.geminiModel.collectAsState()
     val isAutoClipboardEnabled by viewModel.isAutoClipboardMonitoringEnabled.collectAsState()
     val convertDigits by viewModel.convertDigitsToBengali.collectAsState()
 
@@ -119,13 +120,13 @@ fun EngineFormattingGroupScreen(
                     currentValue = when (onlineEngineMode) {
                         OnlineEngineMode.OFFLINE_ONLY -> "অফলাইন ইঞ্জিন (০ms ল্যাটেন্সি)"
                         OnlineEngineMode.ONLINE_CLOUD -> "Google ক্লাউড ট্রান্সলিটারেশন API"
-                        OnlineEngineMode.GEMINI_AI -> "Gemini AI স্মার্ট ইঞ্জিন"
+                        OnlineEngineMode.GEMINI_AI -> "Gemini AI ($geminiModel)"
                     },
                     icon = Icons.Default.Public,
                     badgeText = when (onlineEngineMode) {
                         OnlineEngineMode.OFFLINE_ONLY -> "অফলাইন"
                         OnlineEngineMode.ONLINE_CLOUD -> "ক্লাউড API"
-                        OnlineEngineMode.GEMINI_AI -> "AI"
+                        OnlineEngineMode.GEMINI_AI -> geminiModel.replace("gemini-", "")
                     },
                     onClick = { showOnlineEngineBottomSheet = true }
                 )
@@ -233,6 +234,7 @@ fun EngineFormattingGroupScreen(
         OnlineEngineBottomSheet(
             currentMode = onlineEngineMode,
             currentApiKey = geminiApiKey,
+            currentModel = geminiModel,
             onModeSelected = {
                 viewModel.setOnlineEngineMode(it)
                 Toast.makeText(context, "ইঞ্জিন আপডেট হয়েছে!", Toast.LENGTH_SHORT).show()
@@ -240,6 +242,10 @@ fun EngineFormattingGroupScreen(
             onApiKeySaved = {
                 viewModel.setGeminiApiKey(it)
                 Toast.makeText(context, "API Key সংরক্ষিত হয়েছে!", Toast.LENGTH_SHORT).show()
+            },
+            onModelSelected = {
+                viewModel.setGeminiModel(it)
+                Toast.makeText(context, "মডেল নির্বাচন: $it", Toast.LENGTH_SHORT).show()
             },
             onDismiss = { showOnlineEngineBottomSheet = false }
         )
