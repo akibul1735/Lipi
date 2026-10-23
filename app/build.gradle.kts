@@ -16,8 +16,12 @@ android {
     applicationId = "com.lipi.app"
     minSdk = 24
     targetSdk = 35
-    versionCode = 29
-    versionName = "1.2.8"
+    versionCode = 30
+    versionName = "1.2.9"
+
+    vectorDrawables {
+      useSupportLibrary = true
+    }
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
