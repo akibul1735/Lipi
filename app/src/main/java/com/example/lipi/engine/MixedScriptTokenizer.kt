@@ -135,7 +135,9 @@ object MixedScriptTokenizer {
             }
         }
 
-        // Step 1: Longest Multi-word Phrase Matching (custom phrases first, then built-in phrases)
+        // Step 1: Longest Multi-word Phrase Matching (custom phrases + v5 loaded phrases + built-in phrases)
+        stageText = LipiDictionary.replacePhrases(stageText)
+
         val customPhrases = customWordbook.entries
             .filter { it.key.contains(" ") }
             .sortedByDescending { it.key.length }
@@ -214,6 +216,7 @@ object MixedScriptTokenizer {
                 // 5. Latin / Alphanumeric Word containing letters (e.g. "ami", "2day", "2moro", "b4", "app")
                 rawToken.any { it.isLetter() } -> {
                     val lower = rawToken.lowercase()
+                    val v5OrLexiconWord = LipiDictionary.findWord(lower)
 
                     // Step 2a: Exact Custom Wordbook match
                     val customWord = customWordbook[lower]
@@ -223,7 +226,7 @@ object MixedScriptTokenizer {
                         tokens.add(ProcessedToken(rawToken, customWord, TokenType.BANGLISH))
                     } else if (transliterationStyle == TransliterationStyle.PRESERVE_ENGLISH &&
                         (LipiDictionary.PRESERVED_ENGLISH_WORDS.contains(lower) ||
-                                (LipiDictionary.STANDARD_ENGLISH_WORDS.contains(lower) && !LipiDictionary.BANGLISH_LEXICON.containsKey(lower))) &&
+                                (LipiDictionary.STANDARD_ENGLISH_WORDS.contains(lower) && v5OrLexiconWord == null)) &&
                         mode != LipiMode.BANGLISH_TO_BENGALI
                     ) {
                         // Preserved English term in Latin
@@ -234,17 +237,20 @@ object MixedScriptTokenizer {
                         val loanword = LipiDictionary.COMMON_ENGLISH_LOANWORDS_TO_BENGALI[lower]!!
                         outputBuilder.append(loanword)
                         tokens.add(ProcessedToken(rawToken, loanword, TokenType.BANGLISH))
-                    } else if (LipiDictionary.BANGLISH_LEXICON.containsKey(lower)) {
-                        // Exact built-in lexicon match (including full Version 5 library)
-                        val word = LipiDictionary.BANGLISH_LEXICON[lower]!!
-                        outputBuilder.append(word)
-                        tokens.add(ProcessedToken(rawToken, word, TokenType.BANGLISH))
+                    } else if (v5OrLexiconWord != null) {
+                        // Exact built-in lexicon match or V5 expanded library
+                        outputBuilder.append(v5OrLexiconWord)
+                        tokens.add(ProcessedToken(rawToken, v5OrLexiconWord, TokenType.BANGLISH))
                     } else {
-                        // Step 3: Text Normalization Rules (Chat Elongation & Suffixes)
-                        val elongatedCandidate = TextNormalizer.normalizeElongatedWord(lower, customWordbook, LipiDictionary.BANGLISH_LEXICON)
-                        val resolvedWord = when {
+                        // Step 3: Text Normalization Rules (Chat Elongation & Suffix morphology)
+                        val elongationWord = LipiDictionary.findWordWithElongation(lower)
+                        val morphWord = if (elongationWord == null) LipiDictionary.findWordWithMorphology(lower) else null
+                        val elongatedCandidate = if (morphWord == null && elongationWord == null) {
+                            TextNormalizer.normalizeElongatedWord(lower, customWordbook, LipiDictionary.BANGLISH_LEXICON)
+                        } else null
+                        val resolvedWord = elongationWord ?: morphWord ?: when {
                             elongatedCandidate != null -> {
-                                customWordbook[elongatedCandidate] ?: LipiDictionary.BANGLISH_LEXICON[elongatedCandidate]
+                                customWordbook[elongatedCandidate] ?: LipiDictionary.findWord(elongatedCandidate)
                             }
                             else -> null
                         }
@@ -292,7 +298,7 @@ object MixedScriptTokenizer {
         var banglishHits = 0
         for (w in words) {
             val cleaned = w.filter { it.isLetter() }
-            if (LipiDictionary.BANGLISH_LEXICON.containsKey(cleaned) || LipiDictionary.COMMON_ENGLISH_LOANWORDS_TO_BENGALI.containsKey(cleaned)) {
+            if (LipiDictionary.findWord(cleaned) != null || LipiDictionary.COMMON_ENGLISH_LOANWORDS_TO_BENGALI.containsKey(cleaned)) {
                 banglishHits++
             }
         }

@@ -409,7 +409,9 @@ class LipiOverlayService : Service() {
         dismissQuickPreview()
 
         val displayMetrics = resources.displayMetrics
-        val width = (260 * displayMetrics.density).toInt()
+        // 300dp width as requested by user
+        val targetWidthDp = 300
+        val width = (targetWidthDp * displayMetrics.density).toInt().coerceAtMost((displayMetrics.widthPixels * 0.95f).toInt())
 
         val layoutParams = WindowManager.LayoutParams(
             width,
@@ -418,7 +420,7 @@ class LipiOverlayService : Service() {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
                 @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -440,6 +442,13 @@ class LipiOverlayService : Service() {
                 setStroke((2 * displayMetrics.density).toInt(), 0xFF57DFCE.toInt())
             }
             elevation = 28f
+            // Dismiss when touched outside
+            setOnTouchListener { _, event ->
+                if (event.action == MotionEvent.ACTION_OUTSIDE) {
+                    dismissQuickPreview()
+                    true
+                } else false
+            }
         }
 
         val titleRow = LinearLayout(this).apply {
@@ -576,10 +585,6 @@ class LipiOverlayService : Service() {
             setBackgroundColor(Color.TRANSPARENT)
             isClickable = true
             isFocusable = true
-            // Clicking outside the floating dialog immediately closes it
-            setOnClickListener {
-                dismissTranslationPopup()
-            }
         }
 
         val windowLayoutParams = WindowManager.LayoutParams(
@@ -589,7 +594,7 @@ class LipiOverlayService : Service() {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
                 @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL, // Allow keyboard and focus inside input
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
         )
 
@@ -602,8 +607,19 @@ class LipiOverlayService : Service() {
                 setStroke(2, 0xFF00A896.toInt())
             }
             elevation = 16f
-            // Important: prevent clicks inside the dialog card from dismissing it
-            setOnClickListener { /* consume click */ }
+        }
+
+        // Intercept touches anywhere outside the 300dp dialog card to immediately close the window
+        rootOverlay.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_DOWN) {
+                val rect = android.graphics.Rect()
+                container.getHitRect(rect)
+                if (!rect.contains(event.x.toInt(), event.y.toInt())) {
+                    dismissTranslationPopup()
+                    return@setOnTouchListener true
+                }
+            }
+            false
         }
 
         val isNearCenter = Math.abs(anchorX - displayMetrics.widthPixels / 2) < 80

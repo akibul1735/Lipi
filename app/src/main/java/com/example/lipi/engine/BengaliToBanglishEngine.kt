@@ -292,8 +292,13 @@ object BengaliToBanglishEngine {
                 sb.append(cons)
                 val isLastChar = (i + 1 >= len)
                 if (!isLastChar && input[i + 1] != 'ঁ' && input[i + 1] != 'ং' && input[i + 1] != 'ঃ') {
-                    // Inherent vowel inside word
-                    sb.append("o")
+                    val nextChar = input[i + 1]
+                    // If 'স' or 'শ' is followed by another consonant (e.g., 'প' in 'হাসপাতাল', 'ত' in 'রাস্তা'),
+                    // it represents a consonant cluster without inherent 'o' (e.g. haspatale, not hasopatale)
+                    val isClusterS = (ch == 'স' || ch == 'শ') && CONSONANTS.containsKey(nextChar)
+                    if (!isClusterS) {
+                        sb.append("o")
+                    }
                 }
                 i++
                 continue

@@ -277,7 +277,12 @@ object LipiDictionary {
         "shotti" to "সত্যি",
         "mittha" to "মিথ্যা",
         "mithya" to "মিথ্যা",
-        "misa" to "মিছা",
+        "haspatal" to "হাসপাতাল",
+        "haspatale" to "হাসপাতালে",
+        "haspataler" to "হাসপাতালের",
+        "haspatalta" to "হাসপাতালটা",
+        "hasopatal" to "হাসপাতাল",
+        "hasopatale" to "হাসপাতালে",
         "valobashi" to "ভালোবাসি",
         "bhalobashi" to "ভালোবাসি",
         "valobasha" to "ভালোবাসা",
@@ -667,7 +672,8 @@ object LipiDictionary {
         "ঠিক" to "thik", "একটু" to "ektu", "অনেক" to "onek", "খুব" to "khub", "অল্প" to "olpo",
         "সমস্যা" to "shomossha", "নাই" to "nai", "নেই" to "nei", "প্যারা" to "pera", "চিল" to "chill",
         "সবাই" to "sobai", "সব" to "shob", "কিছু" to "kichu", "কোথা" to "kotha", "মানুষ" to "manush",
-        "ফোন" to "phone", "মেসেজ" to "message", "কল" to "call", "লিংক" to "link", "ছবি" to "chobi"
+        "ফোন" to "phone", "মেসেজ" to "message", "কল" to "call", "লিংক" to "link", "ছবি" to "chobi",
+        "হাসপাতাল" to "haspatal", "হাসপাতালে" to "haspatale", "হাসপাতালের" to "haspataler", "হাসপাতালটা" to "haspatalta"
     )
 
     // Reverse multi-word phrases (longest first)
@@ -936,6 +942,10 @@ object LipiDictionary {
 
         for ((engSuffix, bngSuffix) in suffixes) {
             if (lower.length > engSuffix.length + 2 && lower.endsWith(engSuffix)) {
+                // If it's a single letter suffix like "o", "i", or "e", don't treat repeated characters (e.g. "valoooo", "amiiii") as suffixes
+                if ((engSuffix == "o" || engSuffix == "i" || engSuffix == "e") && lower.length >= 2 && lower[lower.length - 2] == lower.last()) {
+                    continue
+                }
                 val root = lower.substring(0, lower.length - engSuffix.length)
                 val rootBng = findWord(root) ?: COMMON_ENGLISH_LOANWORDS_TO_BENGALI[root]
                 if (rootBng != null) {
@@ -965,11 +975,13 @@ object LipiDictionary {
 
         // Check if string contains 3 or more repeated letters in a row (e.g. ooo, kkk, iii)
         if (Regex("""(.)\1{2,}""").containsMatchIn(lower)) {
-            val collapsedDouble = lower.replace(Regex("""(.)\1{2,}"""), "$1$1")
-            findWordWithMorphology(collapsedDouble)?.let { return it }
-
             val collapsedSingle = lower.replace(Regex("""(.)\1+"""), "$1")
+            findWord(collapsedSingle)?.let { return it }
             findWordWithMorphology(collapsedSingle)?.let { return it }
+
+            val collapsedDouble = lower.replace(Regex("""(.)\1{2,}"""), "$1$1")
+            findWord(collapsedDouble)?.let { return it }
+            findWordWithMorphology(collapsedDouble)?.let { return it }
         }
 
         return null

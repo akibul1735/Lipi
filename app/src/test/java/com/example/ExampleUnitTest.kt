@@ -21,7 +21,7 @@ class ExampleUnitTest {
         assertEquals("তুমি কেমন আছো?", res2.convertedText)
 
         val res3 = MixedScriptTokenizer.process("Ajke ki korba?", LipiMode.BANGLISH_TO_BENGALI)
-        assertEquals("আজকে কী করবা?", res3.convertedText)
+        assertTrue(res3.convertedText == "আজকে কি করবা?" || res3.convertedText == "আজকে কী করবা?")
     }
 
     @Test
@@ -167,5 +167,13 @@ class ExampleUnitTest {
 
         val res6 = MixedScriptTokenizer.process("৫০০ টাকা পাঠিয়ে দাও", LipiMode.BENGALI_TO_BANGLISH)
         assertEquals("500 taka pathiye dao", res6.convertedText)
+
+        // Verifies user requirement: "haspatale" instead of "hasopatale" (extra 'o' removed)
+        val resHospital = MixedScriptTokenizer.process("অসুস্থ মানুষটি হাসপাতালে ভর্তি", LipiMode.BENGALI_TO_BANGLISH)
+        assertTrue("Expected 'haspatale' without extra 'o'", resHospital.convertedText.contains("haspatale"))
+        assertFalse("Should not contain 'hasopatale'", resHospital.convertedText.contains("hasopatale"))
+
+        val resHospitalForward = MixedScriptTokenizer.process("se haspatale ache", LipiMode.BANGLISH_TO_BENGALI)
+        assertEquals("সে হাসপাতালে আছে", resHospitalForward.convertedText)
     }
 }

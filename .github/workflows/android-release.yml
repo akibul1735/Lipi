@@ -79,7 +79,7 @@ jobs:
           echo "Building Release APK..."
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-          BUILD_TOOLS_DIR=$(find $ANDROID_HOME/build-tools -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
+          BUILD_TOOLS_DIR=$(find ${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
           echo "Using Android Build Tools at: $BUILD_TOOLS_DIR"
 
           INPUT_APK=""
@@ -108,7 +108,7 @@ jobs:
 
       - name: Verify APK Signatures & Alignment
         run: |
-          BUILD_TOOLS_DIR=$(find $ANDROID_HOME/build-tools -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
+          BUILD_TOOLS_DIR=$(find ${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
           echo "=== Verifying Lipi-Release.apk ==="
           $BUILD_TOOLS_DIR/apksigner verify --verbose Lipi-Release.apk
           $BUILD_TOOLS_DIR/zipalign -c -v 4 Lipi-Release.apk
