@@ -103,12 +103,21 @@ class LipiRepository(private val context: Context) {
     }
 
     fun addWordbookEntry(banglish: String, bengali: String, category: String = "কাস্টম") {
-        val newEntry = WordbookEntry(
-            banglish = banglish.trim().lowercase(),
-            bengali = bengali.trim(),
-            category = category
-        )
-        val updated = _customWordbook.value + newEntry
+        val cleanBanglish = banglish.trim().lowercase()
+        val cleanBengali = bengali.trim()
+        val current = _customWordbook.value
+        val existingIndex = current.indexOfFirst { it.banglish.equals(cleanBanglish, ignoreCase = true) }
+        val updated = if (existingIndex >= 0) {
+            val list = current.toMutableList()
+            list[existingIndex] = list[existingIndex].copy(bengali = cleanBengali, category = category)
+            list
+        } else {
+            current + WordbookEntry(
+                banglish = cleanBanglish,
+                bengali = cleanBengali,
+                category = category
+            )
+        }
         saveCustomWordbook(updated)
     }
 

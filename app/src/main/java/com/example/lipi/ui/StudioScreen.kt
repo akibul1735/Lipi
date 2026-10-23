@@ -203,7 +203,11 @@ fun StudioScreen(
                                     action = if (checked) LipiOverlayService.ACTION_START_ASSISTANT else LipiOverlayService.ACTION_DISMISS
                                 }
                                 try {
-                                    context.startService(serviceIntent)
+                                    if (checked) {
+                                        androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
+                                    } else {
+                                        context.startService(serviceIntent)
+                                    }
                                     Toast.makeText(context, if (checked) "ভাসমান 'A ⇄ অ' অনুবাদক বল চালু হয়েছে!" else "ভাসমান বল লুকানো হয়েছে", Toast.LENGTH_SHORT).show()
                                 } catch (e: Exception) {
                                     e.printStackTrace()

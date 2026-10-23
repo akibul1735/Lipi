@@ -135,27 +135,38 @@ object MixedScriptTokenizer {
             }
         }
 
-        // Step 1: Longest Multi-word Phrase Matching (custom phrases + v5 loaded phrases + built-in phrases)
-        stageText = LipiDictionary.replacePhrases(stageText)
+        // Step 1: Longest Multi-word Phrase Matching (only if input contains spaces)
+        if (stageText.contains(' ')) {
+            stageText = LipiDictionary.replacePhrases(stageText)
 
-        val customPhrases = customWordbook.entries
-            .filter { it.key.contains(" ") }
-            .sortedByDescending { it.key.length }
-            .map { it.key to it.value }
+            // Custom user wordbook phrases
+            val customPhrases = if (customWordbook.isNotEmpty()) {
+                customWordbook.entries
+                    .filter { it.key.contains(" ") }
+                    .sortedByDescending { it.key.length }
+            } else emptyList()
 
-        val allPhrases = customPhrases + LipiDictionary.BANGLISH_PHRASES
+            for (entry in customPhrases) {
+                val phrase = entry.key
+                val bengaliReplacement = entry.value
+                val spaceIndex = phrase.indexOf(' ')
+                val firstWord = if (spaceIndex > 0) phrase.substring(0, spaceIndex) else phrase
+                if (!stageText.contains(firstWord, ignoreCase = true)) continue
 
-        for ((phrase, bengaliReplacement) in allPhrases) {
-            val spaceIndex = phrase.indexOf(' ')
-            val firstWord = if (spaceIndex > 0) phrase.substring(0, spaceIndex) else phrase
-            // Fast guard: skip regex compilation and matching if first word is not even present in the text
-            if (!stageText.contains(firstWord, ignoreCase = true)) continue
+                val words = phrase.trim().split(Regex("""\s+""")).filter { it.isNotBlank() }
+                if (words.size >= 2) {
+                    val phrasePattern = Regex("""(?i)\b""" + words.joinToString("""\s+""") { Regex.escape(it) } + """\b""")
+                    if (phrasePattern.containsMatchIn(stageText)) {
+                        stageText = phrasePattern.replace(stageText, bengaliReplacement)
+                    }
+                }
+            }
 
-            val words = phrase.trim().split(Regex("""\s+""")).filter { it.isNotBlank() }
-            if (words.size >= 2) {
-                val phrasePattern = Regex("""(?i)\b""" + words.joinToString("""\s+""") { Regex.escape(it) } + """\b""")
-                if (phrasePattern.containsMatchIn(stageText)) {
-                    stageText = phrasePattern.replace(stageText, bengaliReplacement)
+            // Pre-compiled built-in phrases (zero runtime regex compilation overhead)
+            for (compiled in LipiDictionary.COMPILED_BANGLISH_PHRASES) {
+                if (!stageText.contains(compiled.firstWord, ignoreCase = true)) continue
+                if (compiled.regex.containsMatchIn(stageText)) {
+                    stageText = compiled.regex.replace(stageText, compiled.replacement)
                 }
             }
         }

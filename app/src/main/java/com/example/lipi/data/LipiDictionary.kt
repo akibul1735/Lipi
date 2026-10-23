@@ -643,8 +643,24 @@ object LipiDictionary {
     // Common multi-word Banglish phrases from Version 5 Library (longest first)
     val BANGLISH_PHRASES: List<Pair<String, String>> = LipiV5Lexicon.PHRASES
 
-    // Combined lexicon containing complete Version 5 expanded word bank and base words
-    val BANGLISH_LEXICON: Map<String, String> = LipiV5Lexicon.WORD_BANK + BASE_BANGLISH_LEXICON
+    data class CompiledPhrase(val firstWord: String, val phrase: String, val regex: Regex, val replacement: String)
+
+    val COMPILED_BANGLISH_PHRASES: List<CompiledPhrase> by lazy {
+        BANGLISH_PHRASES.map { (phrase, replacement) ->
+            val words = phrase.trim().split(Regex("""\s+""")).filter { it.isNotBlank() }
+            val pattern = Regex("""(?i)\b""" + words.joinToString("""\s+""") { Regex.escape(it) } + """\b""")
+            val firstWord = words.firstOrNull() ?: phrase
+            CompiledPhrase(firstWord, phrase, pattern, replacement)
+        }
+    }
+
+    // Lazy combined lexicon to minimize upfront memory allocation
+    val BANGLISH_LEXICON: Map<String, String> by lazy {
+        val map = HashMap<String, String>(LipiV5Lexicon.WORD_BANK.size + BASE_BANGLISH_LEXICON.size)
+        map.putAll(LipiV5Lexicon.WORD_BANK)
+        map.putAll(BASE_BANGLISH_LEXICON)
+        map
+    }
 
     // High-priority colloquial reverse mappings for most natural Banglish output
     val PREFERRED_BENGALI_TO_BANGLISH: Map<String, String> = mapOf(
@@ -887,25 +903,35 @@ object LipiDictionary {
     fun getV5PhraseCount(): Int = v5Phrases.size
 
     /**
-     * Exact lookup in V5 word bank + base lexicon
+     * Exact lookup in V5 word bank, base lexicon, or V5 expanded lexicon
+     * Uses tiered direct map access to minimize memory allocation
      */
     fun findWord(token: String): String? {
         val lower = token.lowercase()
-        return v5WordBank[lower] ?: BANGLISH_LEXICON[lower]
+        return v5WordBank[lower] ?: BASE_BANGLISH_LEXICON[lower] ?: LipiV5Lexicon.WORD_BANK[lower]
     }
 
     /**
      * Replaces multi-word phrases according to longest phrase match first
+     * Uses fast substring check before invoking regex engine
      */
     fun replacePhrases(inputText: String): String {
+        // Fast-path: texts without spaces cannot match multi-word phrases
+        if (!inputText.contains(' ')) return inputText
+
         if (!isV5Loaded) {
             loadV5Library(null)
         }
         if (v5LoadedRegexPhrases.isEmpty()) return inputText
 
+        val lower = inputText.lowercase()
         var result = inputText
-        for ((regex, replacement) in v5LoadedRegexPhrases) {
-            if (regex.containsMatchIn(result)) {
+        for (i in 0 until v5Phrases.size) {
+            val phraseText = v5Phrases[i].first
+            // Fast contains check prevents running regex on unrelated phrases
+            if (lower.contains(phraseText)) {
+                val regex = v5LoadedRegexPhrases[i].first
+                val replacement = v5LoadedRegexPhrases[i].second
                 result = regex.replace(result, replacement)
             }
         }

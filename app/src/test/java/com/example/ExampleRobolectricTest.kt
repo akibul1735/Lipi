@@ -116,5 +116,8 @@ class ExampleRobolectricTest {
         }
 
         composeTestRule.onNodeWithTag("floating_master_switch").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("single_data_entry_card").assertExists()
+        composeTestRule.onNodeWithTag("single_data_entry_banglish_input").assertExists()
+        composeTestRule.onNodeWithTag("save_single_data_entry_button").assertExists()
     }
 }

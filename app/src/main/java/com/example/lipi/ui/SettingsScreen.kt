@@ -18,10 +18,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import com.example.lipi.engine.MixedScriptTokenizer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.content.ClipData
@@ -117,6 +119,11 @@ fun SettingsScreen(
     var newBanglish by remember { mutableStateOf("") }
     var newBengali by remember { mutableStateOf("") }
     var newCategory by remember { mutableStateOf("সাধারণ") }
+
+    var singleEntryBanglish by remember { mutableStateOf("") }
+    var singleEntryBengali by remember { mutableStateOf("") }
+    var singleEntryCategory by remember { mutableStateOf("সাধারণ") }
+    var isSingleEntryExpanded by remember { mutableStateOf(true) }
 
     var showImportDialog by remember { mutableStateOf(false) }
     var importTextContent by remember { mutableStateOf("") }
@@ -343,7 +350,13 @@ fun SettingsScreen(
                             val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
                                 action = LipiOverlayService.ACTION_UPDATE_NOTIFICATION
                             }
-                            try { context.startService(serviceIntent) } catch (e: Exception) { e.printStackTrace() }
+                            try {
+                                if (enable) {
+                                    androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
+                                } else {
+                                    context.startService(serviceIntent)
+                                }
+                            } catch (e: Exception) { e.printStackTrace() }
                         },
                         colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = PadmaTealPrimary),
                         modifier = Modifier.testTag("persistent_notification_switch")
@@ -370,7 +383,7 @@ fun SettingsScreen(
                                         action = LipiOverlayService.ACTION_OPEN_POPUP
                                     }
                                     try {
-                                        context.startService(serviceIntent)
+                                        androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
                                         Toast.makeText(context, "৩০০dp অনুবাদ উইন্ডো চালু হয়েছে!", Toast.LENGTH_SHORT).show()
                                     } catch (e: Exception) {
                                         e.printStackTrace()
@@ -392,7 +405,7 @@ fun SettingsScreen(
                                     action = LipiOverlayService.ACTION_UPDATE_NOTIFICATION
                                 }
                                 try {
-                                    context.startService(serviceIntent)
+                                    androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
                                     Toast.makeText(context, "নোটিফিকেশন বার রিফ্রেশ করা হয়েছে", Toast.LENGTH_SHORT).show()
                                 } catch (e: Exception) {
                                     e.printStackTrace()
@@ -402,6 +415,80 @@ fun SettingsScreen(
                         ) {
                             Text("রিফ্রেশ বার", fontSize = 13.sp)
                         }
+                    }
+                }
+            }
+        }
+
+        // Battery Optimization & Long-running Service Protection Card
+        val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager }
+        val isIgnoringBatteryOptimizations = remember {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
+            } else true
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isIgnoringBatteryOptimizations)
+                    MaterialTheme.colorScheme.surface
+                else
+                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (isIgnoringBatteryOptimizations) Icons.Default.CheckCircle else Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = if (isIgnoringBatteryOptimizations) PadmaTealPrimary else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "সার্বক্ষণিক নোটিফিকেশন ও ব্যাকগ্রাউন্ড রক্ষা",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = if (isIgnoringBatteryOptimizations)
+                        "✓ ব্যাটারি অপটিমাইজেশন বন্ধ রয়েছে। লিপিকে ব্যাকগ্রাউন্ডে অ্যান্ড্রয়েড সিস্টেম বা OEM সেভার কিল করবে না এবং নোটিফিকেশন বার সার্বক্ষণিক দৃশ্যমান থাকবে।"
+                    else
+                        "কিছু ডিভাইসে (Xiaomi, Samsung, Oppo, Vivo, Realme) কিছুক্ষণ পর সিস্টেম ব্যাকগ্রাউন্ড সার্ভিস ও নোটিফিকেশন বন্ধ করে দেয়। নোটিফিকেশন ও অনুবাদ বল সর্বদা চালু রাখতে ব্যাটারি অপটিমাইজেশন বন্ধ (Unrestricted) করুন।",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (!isIgnoringBatteryOptimizations) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            val intent = Intent().apply {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                                    action = Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+                                } else {
+                                    action = Settings.ACTION_SETTINGS
+                                }
+                            }
+                            try {
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "সেটিংস খোলা সম্ভব হয়নি", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("ব্যাটারি আনরেস্ট্রিকটেড (Unrestricted) করুন", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -847,23 +934,35 @@ pdf=পিডিএফ"""
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Action Buttons Bar (Single, Import, Export)
+                // Action Buttons Bar (Single Entry, Import, Export)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = { showAddWordDialog = true },
+                        onClick = { isSingleEntryExpanded = true },
                         modifier = Modifier
-                            .weight(1f)
+                            .weight(1.2f)
                             .testTag("add_single_word_button"),
-                        colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isSingleEntryExpanded) PadmaTealPrimary else MaterialTheme.colorScheme.surfaceVariant
+                        ),
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = if (isSingleEntryExpanded) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("একক শব্দ", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "একক এন্ট্রি",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isSingleEntryExpanded) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
 
                     OutlinedButton(
@@ -890,6 +989,203 @@ pdf=পিডিএফ"""
                         Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("এক্সপোর্ট", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Dedicated Single Data Entry Card / Section
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, PadmaTealPrimary.copy(alpha = 0.4f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("single_data_entry_card")
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    tint = PadmaTealPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "একক ডাটা এন্ট্রি (Single Data Entry)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Text(
+                                text = if (isSingleEntryExpanded) "লুকান ▲" else "খুলুন ▼",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = PadmaTealPrimary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { isSingleEntryExpanded = !isSingleEntryExpanded }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    .testTag("toggle_single_data_entry_expanded")
+                            )
+                        }
+
+                        if (isSingleEntryExpanded) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "একটি নির্দিষ্ট বাংলিশ শব্দ/বাক্য এবং তার নিজস্ব বাংলা অর্থ শব্দকোষে যোগ করুন:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            OutlinedTextField(
+                                value = singleEntryBanglish,
+                                onValueChange = { singleEntryBanglish = it },
+                                label = { Text("বাংলিশ শব্দ / বাক্য (যেমন: pera nai)") },
+                                placeholder = { Text("যেমন: pera nai, valo thakben, chill koro") },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("single_data_entry_banglish_input"),
+                                singleLine = true,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+
+                            // Real-time transliteration suggestion
+                            val autoSuggestedBengali = remember(singleEntryBanglish) {
+                                if (singleEntryBanglish.isNotBlank()) {
+                                    MixedScriptTokenizer.process(singleEntryBanglish).convertedText
+                                } else ""
+                            }
+
+                            if (autoSuggestedBengali.isNotBlank() && autoSuggestedBengali != singleEntryBengali) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(PadmaTealPrimary.copy(alpha = 0.12f))
+                                        .clickable { singleEntryBengali = autoSuggestedBengali }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        .testTag("single_data_entry_autosuggest_chip"),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "💡 লিপির তাৎক্ষণিক রূপান্তর: $autoSuggestedBengali",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = PadmaTealPrimary,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "ব্যবহার করুন ↵",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = PadmaTealPrimary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            OutlinedTextField(
+                                value = singleEntryBengali,
+                                onValueChange = { singleEntryBengali = it },
+                                label = { Text("বাংলা রূপ / অর্থ (যেমন: প্যারা নাই)") },
+                                placeholder = { Text("যেমন: প্যারা নাই, ভালো থাকবেন") },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("single_data_entry_bengali_input"),
+                                singleLine = true,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Category Chips
+                            Text(
+                                text = "ক্যাটাগরি নির্বাচন:",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            val categoryOptions = listOf("সাধারণ", "কথোপকথন", "অফিস", "স্ল্যাং", "কাস্টম")
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                categoryOptions.forEach { cat ->
+                                    val isSelected = singleEntryCategory == cat
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isSelected) PadmaTealPrimary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { singleEntryCategory = cat }
+                                            .testTag("single_entry_category_$cat")
+                                    ) {
+                                        Text(
+                                            text = cat,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        if (singleEntryBanglish.isNotBlank() && singleEntryBengali.isNotBlank()) {
+                                            viewModel.addCustomWord(singleEntryBanglish, singleEntryBengali, singleEntryCategory)
+                                            Toast.makeText(context, "✓ '${singleEntryBanglish.trim()}' শব্দকোষে যুক্ত হয়েছে!", Toast.LENGTH_SHORT).show()
+                                            singleEntryBanglish = ""
+                                            singleEntryBengali = ""
+                                        } else {
+                                            Toast.makeText(context, "বাংলিশ ও বাংলা দুটি ঘরই পূরণ করুন", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("save_single_data_entry_button"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("শব্দকোষে সংরক্ষণ করুন", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+
+                                if (singleEntryBanglish.isNotBlank() || singleEntryBengali.isNotBlank()) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            singleEntryBanglish = ""
+                                            singleEntryBengali = ""
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.testTag("clear_single_data_entry_button")
+                                    ) {
+                                        Text("মুছুন", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1055,9 +1351,13 @@ pdf=পিডিএফ"""
         // DIALOG 1: Single Word Entry Dialog
         // -------------------------------------------------------------
         if (showAddWordDialog) {
+            val autoSuggested = remember(newBanglish) {
+                if (newBanglish.isNotBlank()) MixedScriptTokenizer.process(newBanglish).convertedText else ""
+            }
+
             AlertDialog(
                 onDismissRequest = { showAddWordDialog = false },
-                title = { Text("নতুন একক শব্দ যুক্ত করুন", fontWeight = FontWeight.Bold) },
+                title = { Text("একক ডাটা এন্ট্রি (নতুন শব্দ যোগ)", fontWeight = FontWeight.Bold) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
@@ -1072,6 +1372,36 @@ pdf=পিডিএফ"""
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
                         )
+
+                        if (autoSuggested.isNotBlank() && autoSuggested != newBengali) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = PadmaTealPrimary.copy(alpha = 0.12f),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { newBengali = autoSuggested }
+                                    .padding(vertical = 2.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "💡 সাজেশন: $autoSuggested",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = PadmaTealPrimary
+                                    )
+                                    Text(
+                                        text = "বসিয়ে দিন ↵",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = PadmaTealPrimary
+                                    )
+                                }
+                            }
+                        }
+
                         OutlinedTextField(
                             value = newBengali,
                             onValueChange = { newBengali = it },
@@ -1092,7 +1422,7 @@ pdf=পিডিএফ"""
                     Button(
                         onClick = {
                             if (newBanglish.isNotBlank() && newBengali.isNotBlank()) {
-                                viewModel.addCustomWord(newBanglish, newBengali)
+                                viewModel.addCustomWord(newBanglish, newBengali, newCategory)
                                 newBanglish = ""
                                 newBengali = ""
                                 showAddWordDialog = false

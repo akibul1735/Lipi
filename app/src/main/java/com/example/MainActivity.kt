@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
                         action = LipiOverlayService.ACTION_START_ASSISTANT
                     }
                     try {
-                        startService(intent)
+                        androidx.core.content.ContextCompat.startForegroundService(this@MainActivity, intent)
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
@@ -62,12 +62,12 @@ class MainActivity : ComponentActivity() {
         // Monitor persistent notification switch to update status bar notification
         lifecycleScope.launch {
             viewModel.isPersistentNotificationEnabled.collectLatest { enabled ->
-                if (Settings.canDrawOverlays(this@MainActivity)) {
+                if (Settings.canDrawOverlays(this@MainActivity) || enabled) {
                     val intent = Intent(this@MainActivity, LipiOverlayService::class.java).apply {
                         action = LipiOverlayService.ACTION_UPDATE_NOTIFICATION
                     }
                     try {
-                        startService(intent)
+                        androidx.core.content.ContextCompat.startForegroundService(this@MainActivity, intent)
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
@@ -95,7 +95,7 @@ class MainActivity : ComponentActivity() {
                     val intent = Intent(this, LipiOverlayService::class.java).apply {
                         action = LipiOverlayService.ACTION_START_ASSISTANT
                     }
-                    startService(intent)
+                    androidx.core.content.ContextCompat.startForegroundService(this, intent)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }

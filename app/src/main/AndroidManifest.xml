@@ -6,6 +6,11 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Foreground Service permissions for persistent quick access notification & overlay -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <!-- Overlay permission for floating assistant window ('ল' বল) -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
@@ -31,10 +36,15 @@
             </intent-filter>
         </activity>
 
-        <!-- Lipi Floating Overlay Window Service ('ল' বল over WhatsApp/Messenger) -->
+        <!-- Lipi Floating Overlay Window & Persistent Quick Access Foreground Service -->
         <service
             android:name=".lipi.service.LipiOverlayService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Floating transliteration assistant overlay and persistent clipboard quick access bar" />
+        </service>
 
     </application>
 

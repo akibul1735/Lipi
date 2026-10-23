@@ -31,6 +31,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.pm.ServiceInfo
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.R
@@ -81,8 +82,13 @@ class LipiOverlayService : Service() {
     private var lastBadgeX = -1
     private var lastBadgeY = 300
 
-    private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
+    private val clipboardDebounceRunnable = Runnable {
         checkClipboardForBanglish()
+    }
+
+    private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
+        mainHandler.removeCallbacks(clipboardDebounceRunnable)
+        mainHandler.postDelayed(clipboardDebounceRunnable, 150)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -99,17 +105,37 @@ class LipiOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Satisfy Android 8+ foreground service requirements immediately
+        val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
+        val isNotificationEnabled = prefs.getBoolean("persistent_notification_enabled", true)
+        if (isNotificationEnabled && intent?.action != ACTION_DISMISS) {
+            updatePersistentNotification()
+        }
+
         if (!Settings.canDrawOverlays(this)) {
-            mainHandler.post {
-                Toast.makeText(this, "লিপি: ভাসমান উইন্ডো অনুমতি প্রয়োজন", Toast.LENGTH_LONG).show()
+            if (intent?.action == ACTION_DISMISS) {
+                stopSelf()
+                return START_NOT_STICKY
             }
-            stopSelf()
-            return START_NOT_STICKY
+            // If overlay permission not granted, but notification is enabled, allow service for status bar quick bar
+            if (!isNotificationEnabled) {
+                mainHandler.post {
+                    Toast.makeText(this, "লিপি: ভাসমান উইন্ডো অনুমতি প্রয়োজন", Toast.LENGTH_LONG).show()
+                }
+                stopSelf()
+                return START_NOT_STICKY
+            }
         }
 
         when (intent?.action) {
             ACTION_DISMISS -> {
                 dismissAllOverlays()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
                 cancelPersistentNotification()
                 stopSelf()
                 return START_NOT_STICKY
@@ -182,6 +208,7 @@ class LipiOverlayService : Service() {
 
     /**
      * Automated clipboard monitoring: Triggered whenever user copies any text on Android.
+     * Optimized to avoid CPU thrashing and unbounded memory allocations.
      */
     private fun checkClipboardForBanglish() {
         val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
@@ -190,40 +217,45 @@ class LipiOverlayService : Service() {
 
         try {
             val clip = clipboardManager?.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() ?: return
-            val hasBengali = clip.any { it in '\u0980'..'\u09FF' }
-            val hasBanglish = MixedScriptTokenizer.hasBanglishContent(clip)
+            // Guard: Immediately skip empty or unchanged clipboard without doing heavy checks
+            if (clip.isBlank() || clip == lastObservedClipText) return
 
-            if (clip.isNotBlank() && clip != lastObservedClipText && (hasBanglish || hasBengali)) {
-                lastObservedClipText = clip
-                currentText = clip
-                val convertDigits = prefs.getBoolean("convert_digits", false)
-                val isReverse = hasBengali && !hasBanglish
-                val mode = if (isReverse) com.example.lipi.data.LipiMode.BENGALI_TO_BANGLISH else com.example.lipi.data.LipiMode.SMART_AUTO
-                val conversion = MixedScriptTokenizer.process(
-                    inputText = clip,
-                    mode = mode,
-                    convertDigitsToBengali = convertDigits,
-                    transliterationStyle = getTransliterationStyle()
-                )
-                convertedBengali = conversion.convertedText
+            // Cap sample length for ultra-fast, RAM-friendly detection on very long texts
+            val textSample = if (clip.length > 800) clip.take(800) else clip
+            val hasBengali = textSample.any { it in '\u0980'..'\u09FF' }
+            val hasBanglish = MixedScriptTokenizer.hasBanglishContent(textSample)
 
-                mainHandler.post {
-                    // Pulse the floating badge
-                    floatingBadgeView?.animate()
-                        ?.scaleX(1.18f)?.scaleY(1.18f)
-                        ?.setDuration(120)
-                        ?.withEndAction {
-                            floatingBadgeView?.animate()?.scaleX(1f)?.scaleY(1f)?.setDuration(120)?.start()
-                        }?.start()
+            if (!hasBanglish && !hasBengali) return
 
-                    // Update active open popup if user is inside it
-                    activeInputField?.setText(currentText)
-                    activeTranslationText?.text = convertedBengali
+            lastObservedClipText = clip
+            currentText = clip
+            val convertDigits = prefs.getBoolean("convert_digits", false)
+            val isReverse = hasBengali && !hasBanglish
+            val mode = if (isReverse) com.example.lipi.data.LipiMode.BENGALI_TO_BANGLISH else com.example.lipi.data.LipiMode.SMART_AUTO
+            val conversion = MixedScriptTokenizer.process(
+                inputText = textSample,
+                mode = mode,
+                convertDigitsToBengali = convertDigits,
+                transliterationStyle = getTransliterationStyle()
+            )
+            convertedBengali = conversion.convertedText
 
-                    // Show sleek quick preview floating card
-                    val prefix = if (isReverse) "বাংলিশ: " else "বাংলা: "
-                    showQuickPreviewCard(prefix + convertedBengali)
-                }
+            mainHandler.post {
+                // Pulse the floating badge
+                floatingBadgeView?.animate()
+                    ?.scaleX(1.18f)?.scaleY(1.18f)
+                    ?.setDuration(120)
+                    ?.withEndAction {
+                        floatingBadgeView?.animate()?.scaleX(1f)?.scaleY(1f)?.setDuration(120)?.start()
+                    }?.start()
+
+                // Update active open popup if user is inside it
+                activeInputField?.setText(currentText)
+                activeTranslationText?.text = convertedBengali
+
+                // Show sleek quick preview floating card
+                val prefix = if (isReverse) "বাংলিশ: " else "বাংলা: "
+                showQuickPreviewCard(prefix + convertedBengali)
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -819,15 +851,20 @@ class LipiOverlayService : Service() {
         toggleBar.addView(btnBanglishToBengali)
         toggleBar.addView(btnBengaliToBanglish)
 
-        // Real-time transliteration as user types
+        // Real-time transliteration as user types with lightweight 40ms debouncer
+        var liveTypingRunnable: Runnable? = null
         inputField.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 val input = s?.toString() ?: ""
                 currentText = input
+                liveTypingRunnable?.let { mainHandler.removeCallbacks(it) }
                 if (input.isNotBlank()) {
-                    convertedBengali = processText(input)
-                    translationText.text = convertedBengali
+                    liveTypingRunnable = Runnable {
+                        convertedBengali = processText(input)
+                        translationText.text = convertedBengali
+                    }
+                    mainHandler.postDelayed(liveTypingRunnable!!, 40)
                 } else {
                     convertedBengali = ""
                     translationText.text = if (isReverseMode) "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..." else "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
@@ -1026,6 +1063,12 @@ class LipiOverlayService : Service() {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
 
         if (!isNotificationEnabled) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
             cancelPersistentNotification()
             return
         }
@@ -1073,6 +1116,7 @@ class LipiOverlayService : Service() {
             .setContentText("উইন্ডো খুলতে বা যেকোনো অ্যাপে তাৎক্ষণিক বাংলা অনুবাদের জন্য ট্যাপ করুন")
             .setSubText("Lipi Quick Access")
             .setOngoing(true)
+            .setAutoCancel(false)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(openPopupPendingIntent)
             .addAction(
@@ -1092,12 +1136,33 @@ class LipiOverlayService : Service() {
             )
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .build()
+            .build().apply {
+                flags = flags or Notification.FLAG_ONGOING_EVENT or Notification.FLAG_NO_CLEAR
+            }
 
+        // Start in Foreground so the system does not kill the service or dismiss the notification
         try {
-            notificationManager?.notify(NOTIFICATION_ID, notification)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                    )
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
+            // Fallback to notify
+            try {
+                notificationManager?.notify(NOTIFICATION_ID, notification)
+            } catch (ex: Exception) {
+                ex.printStackTrace()
+            }
         }
     }
 
@@ -1110,12 +1175,30 @@ class LipiOverlayService : Service() {
         }
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        // Keep foreground service and notification active if enabled
+        val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
+        val isNotificationEnabled = prefs.getBoolean("persistent_notification_enabled", true)
+        val isFloatingEnabled = prefs.getBoolean("floating_enabled", true)
+        if (isNotificationEnabled || isFloatingEnabled) {
+            updatePersistentNotification()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         try {
             clipboardManager?.removePrimaryClipChangedListener(clipboardListener)
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+        mainHandler.removeCallbacksAndMessages(null)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
         }
         cancelPersistentNotification()
         dismissAllOverlays()
