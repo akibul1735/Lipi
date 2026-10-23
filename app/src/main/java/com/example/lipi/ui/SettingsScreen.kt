@@ -1,12 +1,14 @@
 package com.example.lipi.ui
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.provider.Settings
-import android.widget.Toast
+import android.os.Build
+import android.os.PowerManager
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,85 +20,111 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import com.example.lipi.engine.MixedScriptTokenizer
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import android.content.ClipData
-import android.content.ClipboardManager
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.automirrored.filled.HelpOutline
-import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.CloudSync
-import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.RestartAlt
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.TouchApp
-import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import com.example.lipi.data.OnlineEngineMode
-import com.example.lipi.engine.LipiOnlineEngine
-import kotlinx.coroutines.launch
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.lipi.service.LipiOverlayService
+import com.example.lipi.ui.settings.EngineFormattingGroupScreen
+import com.example.lipi.ui.settings.FloatingNotificationGroupScreen
+import com.example.lipi.ui.settings.SettingsGroup
+import com.example.lipi.ui.settings.SettingsGroupCard
+import com.example.lipi.ui.settings.SystemBatteryGroupScreen
+import com.example.lipi.ui.settings.WordbookDataGroupScreen
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.PadmaTealPrimary
-import com.example.ui.theme.TerracottaSecondary
 
+/**
+ * Hierarchical, page-based Settings Screen for Lipi.
+ * 
+ * Root Screen: Clean list of settings category cards with icons, subtitles, dynamic status badges, and trailing chevrons.
+ * Sub Screens: Dedicated group details screens for each category with back-navigation.
+ */
 @Composable
 fun SettingsScreen(
     viewModel: LipiViewModel,
+    modifier: Modifier = Modifier
+) {
+    var activeGroup by rememberSaveable { mutableStateOf<SettingsGroup?>(null) }
+
+    // Intercept hardware and gesture back button when inside a group details screen
+    BackHandler(enabled = activeGroup != null) {
+        activeGroup = null
+    }
+
+    Box(
+        modifier = modifier.fillMaxSize()
+    ) {
+        when (activeGroup) {
+            null -> {
+                MainSettingsMenu(
+                    viewModel = viewModel,
+                    onOpenGroup = { selectedGroup ->
+                        activeGroup = selectedGroup
+                    }
+                )
+            }
+            SettingsGroup.FLOATING_NOTIFICATION -> {
+                FloatingNotificationGroupScreen(
+                    viewModel = viewModel,
+                    onBack = { activeGroup = null }
+                )
+            }
+            SettingsGroup.ENGINE_FORMATTING -> {
+                EngineFormattingGroupScreen(
+                    viewModel = viewModel,
+                    onBack = { activeGroup = null }
+                )
+            }
+            SettingsGroup.WORDBOOK_DATA -> {
+                WordbookDataGroupScreen(
+                    viewModel = viewModel,
+                    onBack = { activeGroup = null }
+                )
+            }
+            SettingsGroup.SYSTEM_BATTERY -> {
+                SystemBatteryGroupScreen(
+                    viewModel = viewModel,
+                    onBack = { activeGroup = null }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Root Settings Menu showing only clean, unexpanded group cards with icons and trailing chevrons.
+ */
+@Composable
+fun MainSettingsMenu(
+    viewModel: LipiViewModel,
+    onOpenGroup: (SettingsGroup) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -104,77 +132,15 @@ fun SettingsScreen(
 
     val isFloatingEnabled by viewModel.isFloatingServiceEnabled.collectAsState()
     val isPersistentNotificationEnabled by viewModel.isPersistentNotificationEnabled.collectAsState()
-    val overlayGranted by viewModel.overlayPermissionGranted.collectAsState()
-    val convertDigits by viewModel.convertDigitsToBengali.collectAsState()
+    val onlineEngineMode by viewModel.onlineEngineMode.collectAsState()
     val customWordbook by viewModel.customWordbook.collectAsState()
+    val overlayGranted by viewModel.overlayPermissionGranted.collectAsState()
 
-    val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager }
-    val isIgnoringBatteryOptimizations = remember {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+    val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? PowerManager }
+    val isIgnoringBattery = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
         } else true
-    }
-
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            viewModel.setPersistentNotificationEnabled(true)
-            val intent = Intent(context, LipiOverlayService::class.java).apply {
-                action = LipiOverlayService.ACTION_UPDATE_NOTIFICATION
-            }
-            try { context.startService(intent) } catch (e: Exception) { e.printStackTrace() }
-            Toast.makeText(context, "নোটিফিকেশন অনুমতি সক্রিয় হয়েছে!", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(context, "নোটিফিকেশন অনুমতি ছাড়া বার দৃশ্যমান হবে না।", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    var showAddWordDialog by remember { mutableStateOf(false) }
-    var newBanglish by remember { mutableStateOf("") }
-    var newBengali by remember { mutableStateOf("") }
-    var newCategory by remember { mutableStateOf("সাধারণ") }
-
-    var singleEntryBanglish by remember { mutableStateOf("") }
-    var singleEntryBengali by remember { mutableStateOf("") }
-    var singleEntryCategory by remember { mutableStateOf("সাধারণ") }
-    var isSingleEntryExpanded by remember { mutableStateOf(true) }
-
-    var showImportDialog by remember { mutableStateOf(false) }
-    var importTextContent by remember { mutableStateOf("") }
-    var importOverwrite by remember { mutableStateOf(false) }
-
-    var showExportDialog by remember { mutableStateOf(false) }
-    var showInstructionsDialog by remember { mutableStateOf(false) }
-    var showClearConfirmDialog by remember { mutableStateOf(false) }
-    var wordSearchQuery by remember { mutableStateOf("") }
-
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                val content = inputStream?.bufferedReader()?.use { it.readText() } ?: ""
-                if (content.isNotBlank()) {
-                    val result = viewModel.bulkImportWords(content, overwrite = importOverwrite)
-                    if (result.errorMessage != null) {
-                        Toast.makeText(context, "ত্রুটি: ${result.errorMessage}", Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(context, "সফলভাবে ${result.addedCount}টি শব্দ আমদানি করা হয়েছে! (মোট: ${result.totalEntries}টি)", Toast.LENGTH_LONG).show()
-                        showImportDialog = false
-                    }
-                } else {
-                    Toast.makeText(context, "ফাইলটি খালি ছিল", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                Toast.makeText(context, "ফাইল পড়তে সমস্যা: ${e.message}", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        viewModel.checkSystemPermissions(context)
     }
 
     Column(
@@ -182,2087 +148,59 @@ fun SettingsScreen(
             .fillMaxSize()
             .verticalScroll(scrollState)
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // =========================================================================
-        // GROUP 1: Floating Assistant & Notification Bar (ভাসমান সহকারী ও নোটিফিকেশন)
-        // =========================================================================
-        SettingsGroupHeader(
-            icon = Icons.Default.TouchApp,
-            title = "ভাসমান সহকারী ও নোটিফিকেশন",
-            subtitle = "স্ক্রিন ওভারলে সহকারী ও নোটিফিকেশন বার নিয়ন্ত্রণ",
-            badgeText = if (isFloatingEnabled) "সক্রিয়" else null
-        )
-
-        // Master Floating Switch Card
-        Card(
+        // App Settings Hero Header
+        Surface(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isFloatingEnabled)
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                else
-                    MaterialTheme.colorScheme.surfaceVariant
-            ),
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp
         ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(18.dp)
+                    .padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "ভাসমান 'A ⇄ অ' সহকারী (অনুবাদ বল)",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = if (isFloatingEnabled)
-                                "সক্রিয়: স্ক্রিনে ভাসমান 'A ⇄ অ' সহকারী চালু আছে। যেকোনো লেখা কপি করলেই স্বয়ংক্রিয় বাংলা প্রিভিউ ভেসে উঠবে অথবা বলে ট্যাপ করে পূর্ণ উইন্ডো খোলা যাবে।"
-                            else
-                                "নিষ্ক্রিয়: ভাসমান উইন্ডো বন্ধ রয়েছে।",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Switch(
-                        checked = isFloatingEnabled,
-                        onCheckedChange = { enable ->
-                            if (enable && !Settings.canDrawOverlays(context)) {
-                                Toast.makeText(context, "অনুগ্রহ করে প্রথমে ভাসমান উইন্ডো (Display over other apps) অন করুন", Toast.LENGTH_LONG).show()
-                                val intent = Intent(
-                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                    Uri.parse("package:${context.packageName}")
-                                )
-                                try { context.startActivity(intent) } catch (e: Exception) { /* fallback */ }
-                            } else {
-                                viewModel.setFloatingServiceEnabled(enable)
-                                val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
-                                    action = if (enable) LipiOverlayService.ACTION_START_ASSISTANT else LipiOverlayService.ACTION_DISMISS
-                                }
-                                try { context.startService(serviceIntent) } catch (e: Exception) { e.printStackTrace() }
-                            }
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = PadmaTealPrimary),
-                        modifier = Modifier.testTag("floating_master_switch")
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Direct One-Tap Floating Ball Launcher Button
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            if (!Settings.canDrawOverlays(context)) {
-                                Toast.makeText(context, "ভাসমান উইন্ডো অনুমতি প্রয়োজন। সেটিংস থেকে 'Display over other apps' অন করুন।", Toast.LENGTH_LONG).show()
-                                val intent = Intent(
-                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                    Uri.parse("package:${context.packageName}")
-                                )
-                                try { context.startActivity(intent) } catch (e: Exception) { /* fallback */ }
-                            } else {
-                                viewModel.setFloatingServiceEnabled(true)
-                                val intent = Intent(context, LipiOverlayService::class.java).apply {
-                                    action = LipiOverlayService.ACTION_START_ASSISTANT
-                                }
-                                try {
-                                    context.startService(intent)
-                                    Toast.makeText(context, "ভাসমান 'A ⇄ অ' সহকারী স্ক্রিনে দৃশ্যমান হয়েছে!", Toast.LENGTH_SHORT).show()
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "সার্ভিস শুরু করা যায়নি: ${e.message}", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("launch_floating_ball_button"),
-                        colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("স্ক্রিনে সহকারী দেখান", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            viewModel.setFloatingServiceEnabled(false)
-                            val intent = Intent(context, LipiOverlayService::class.java).apply {
-                                action = LipiOverlayService.ACTION_DISMISS
-                            }
-                            try {
-                                context.startService(intent)
-                                Toast.makeText(context, "ভাসমান সহকারী লুকানো হয়েছে", Toast.LENGTH_SHORT).show()
-                            } catch (e: Exception) { /* fallback */ }
-                        },
-                        modifier = Modifier.testTag("hide_floating_ball_button"),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("লুকান")
-                    }
-                }
-            }
-        }
-
-        // Dedicated Persistent Notification Bar Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isPersistentNotificationEnabled)
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                else
-                    MaterialTheme.colorScheme.surfaceVariant
-            ),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Notifications,
-                                contentDescription = null,
-                                tint = PadmaTealPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "দ্রুত নোটিফিকেশন বার (Persistent Bar)",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = if (isPersistentNotificationEnabled)
-                                "সক্রিয়: স্ট্যাটাস বারে স্থায়ী 'লিপি দ্রুত অনুবাদ বার' পিন করা আছে। যেকোনো অ্যাপে থাকা অবস্থায় উপর থেকে নোটিফিকেশন বার টেনে ১-ট্যাপে সরাসরি ৩০০dp অনুবাদ উইন্ডো খুলুন।"
-                            else
-                                "নিষ্ক্রিয়: নোটিফিকেশন বার বন্ধ রয়েছে।",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Switch(
-                        checked = isPersistentNotificationEnabled,
-                        onCheckedChange = { enable ->
-                            if (enable && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                if (context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                    notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                                    return@Switch
-                                }
-                            }
-                            viewModel.setPersistentNotificationEnabled(enable)
-                            val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
-                                action = LipiOverlayService.ACTION_UPDATE_NOTIFICATION
-                            }
-                            try {
-                                if (enable) {
-                                    androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
-                                } else {
-                                    context.startService(serviceIntent)
-                                }
-                            } catch (e: Exception) { e.printStackTrace() }
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = PadmaTealPrimary),
-                        modifier = Modifier.testTag("persistent_notification_switch")
-                    )
-                }
-
-                if (isPersistentNotificationEnabled) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                if (!Settings.canDrawOverlays(context)) {
-                                    Toast.makeText(context, "অনুবাদ উইন্ডো প্রদর্শনের জন্য ভাসমান উইন্ডো অনুমতি দিন", Toast.LENGTH_LONG).show()
-                                    val intent = Intent(
-                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                        Uri.parse("package:${context.packageName}")
-                                    )
-                                    try { context.startActivity(intent) } catch (e: Exception) { /* fallback */ }
-                                } else {
-                                    val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
-                                        action = LipiOverlayService.ACTION_OPEN_POPUP
-                                    }
-                                    try {
-                                        androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
-                                        Toast.makeText(context, "৩০০dp অনুবাদ উইন্ডো চালু হয়েছে!", Toast.LENGTH_SHORT).show()
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
-                                    }
-                                }
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("test_quick_notification_button"),
-                            colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("উইন্ডো পরীক্ষা করুন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                val serviceIntent = Intent(context, LipiOverlayService::class.java).apply {
-                                    action = LipiOverlayService.ACTION_UPDATE_NOTIFICATION
-                                }
-                                try {
-                                    androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
-                                    Toast.makeText(context, "নোটিফিকেশন বার রিফ্রেশ করা হয়েছে", Toast.LENGTH_SHORT).show()
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
-                            },
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("রিফ্রেশ বার", fontSize = 13.sp)
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3-Step Simple Copy & Translate Guide
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Text(
-                    text = "সহজ ব্যবহারের ৩টি ধাপ (কপি ও অনুবাদ)",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                GuideStepRow(
-                    icon = Icons.Default.ContentCopy,
-                    stepNumber = "১",
-                    title = "যেকোনো অ্যাপে বাংলিশ কপি করুন",
-                    description = "হোয়াটসঅ্যাপ, মেসেঞ্জার, ফেসবুক বা ব্রাউজারে যেকোনো মেসেজ বা লেখা সিলেক্ট করে 'Copy' করুন।"
-                )
-                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.surfaceVariant)
-
-                GuideStepRow(
-                    icon = Icons.Default.TouchApp,
-                    stepNumber = "২",
-                    title = "স্বয়ংক্রিয় প্রিভিউ কার্ড বা 'A ⇄ অ' বলে চাপুন",
-                    description = "কপি করার সাথে সাথে পাশে তাৎক্ষণিক বাংলা প্রিভিউ ভেসে উঠবে (অথবা 'A ⇄ অ' বলে ট্যাপ করুন)।"
-                )
-                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.surfaceVariant)
-
-                GuideStepRow(
-                    icon = Icons.Default.Translate,
-                    stepNumber = "৩",
-                    title = "তাৎক্ষণিক বাংলা দেখুন ও কপি করুন",
-                    description = "পপআপে শতভাগ প্রমিত বাংলা রূপান্তর দেখতে পাবেন। 'কপি করুন' চাপলেই আপনার ক্লিপবোর্ডে বাংলা লেখা রেডি!"
-                )
-            }
-        }
-
-        // =========================================================================
-        // GROUP 2: Translation Engine & Formatting (রূপান্তর ইঞ্জিন ও ফরম্যাটিং)
-        // =========================================================================
-        SettingsGroupHeader(
-            icon = Icons.Default.Translate,
-            title = "রূপান্তর ইঞ্জিন ও ফরম্যাটিং",
-            subtitle = "বাংলা ও ইংরেজি ভাষার আচরণ এবং অটোমেশন সেটিংস",
-            badgeText = "v5 ইঞ্জিন"
-        )
-
-        // User-Requested Transliteration Options:
-        // 1. সকল টেক্সট বাংলায় (কোন কিছুই ইংরেজিতে নয়, সেসব শব্দ ইংরেজি হলেও বাংলাতে প্রচলিত, সেসবও বাংলাতে দেখাবে: app - অ্যাপ, 5pm - বিকাল পাঁচটায়, ইত্যাদি)
-        // 2. কিছু ইংরেজি শব্দ preserve রাখা।
-        val transliterationStyle by viewModel.transliterationStyle.collectAsState()
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Text(
-                    text = "বাংলিশ থেকে বাংলা রূপান্তর অপশন",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "অনুবাদ করার সময় ইংরেজি শব্দ ও সময় কীভাবে প্রদর্শিত হবে তা নির্বাচন করুন:",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Option 1
-                Surface(
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { viewModel.setTransliterationStyle(com.example.lipi.data.TransliterationStyle.ALL_BENGALI) }
-                        .testTag("transliteration_style_all_bengali"),
-                    color = if (transliterationStyle == com.example.lipi.data.TransliterationStyle.ALL_BENGALI)
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-                    else
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (transliterationStyle == com.example.lipi.data.TransliterationStyle.ALL_BENGALI) MaterialTheme.colorScheme.primary else Color.Transparent
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        androidx.compose.material3.RadioButton(
-                            selected = transliterationStyle == com.example.lipi.data.TransliterationStyle.ALL_BENGALI,
-                            onClick = { viewModel.setTransliterationStyle(com.example.lipi.data.TransliterationStyle.ALL_BENGALI) },
-                            colors = androidx.compose.material3.RadioButtonDefaults.colors(selectedColor = PadmaTealPrimary)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = "১। সকল টেক্সট বাংলায় (১০০% খাঁটি বাংলা)",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(PadmaTealPrimary, CyanAccent)
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "কোন কিছুই ইংরেজিতে নয়। যেসব শব্দ ইংরেজি হলেও বাংলাতে প্রচলিত, সেসবও বাংলাতে দেখাবে (যেমন: app → অ্যাপ, 5pm → বিকাল পাঁচটায়, meeting → মিটিং, link → লিংক ইত্যাদি)।",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                lineHeight = 18.sp
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Option 2
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { viewModel.setTransliterationStyle(com.example.lipi.data.TransliterationStyle.PRESERVE_ENGLISH) }
-                        .testTag("transliteration_style_preserve_english"),
-                    color = if (transliterationStyle == com.example.lipi.data.TransliterationStyle.PRESERVE_ENGLISH)
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-                    else
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (transliterationStyle == com.example.lipi.data.TransliterationStyle.PRESERVE_ENGLISH) MaterialTheme.colorScheme.primary else Color.Transparent
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        androidx.compose.material3.RadioButton(
-                            selected = transliterationStyle == com.example.lipi.data.TransliterationStyle.PRESERVE_ENGLISH,
-                            onClick = { viewModel.setTransliterationStyle(com.example.lipi.data.TransliterationStyle.PRESERVE_ENGLISH) },
-                            colors = androidx.compose.material3.RadioButtonDefaults.colors(selectedColor = PadmaTealPrimary)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = "২। কিছু ইংরেজি শব্দ preserve রাখা",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "প্রচলিত প্রযুক্তি ও অফিস শব্দ মূল ইংরেজি হরফে অক্ষত থাকবে (যেমন: zoom, meeting, link, pdf, call ইত্যাদি)।",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                lineHeight = 18.sp
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // =========================================================================
-        // Online API & Cloud Engine Configuration Card
-        // =========================================================================
-        val onlineEngineMode by viewModel.onlineEngineMode.collectAsState()
-        val geminiApiKey by viewModel.geminiApiKey.collectAsState()
-        var customApiKeyInput by remember(geminiApiKey) { mutableStateOf(geminiApiKey) }
-        var isTestingOnlineApi by remember { mutableStateOf(false) }
-        var testResultFeedback by remember { mutableStateOf<String?>(null) }
-        val settingsCoroutineScope = rememberCoroutineScope()
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Public,
-                            contentDescription = null,
-                            tint = PadmaTealPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "অনলাইন এপিআই ও ক্লাউড ইঞ্জিন",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = when (onlineEngineMode) {
-                            OnlineEngineMode.OFFLINE_ONLY -> MaterialTheme.colorScheme.surfaceVariant
-                            OnlineEngineMode.ONLINE_CLOUD -> PadmaTealPrimary.copy(alpha = 0.15f)
-                            OnlineEngineMode.GEMINI_AI -> CyanAccent.copy(alpha = 0.2f)
-                        }
-                    ) {
-                        Text(
-                            text = when (onlineEngineMode) {
-                                OnlineEngineMode.OFFLINE_ONLY -> "অফলাইন"
-                                OnlineEngineMode.ONLINE_CLOUD -> "Google ক্লাউড"
-                                OnlineEngineMode.GEMINI_AI -> "Gemini AI"
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = when (onlineEngineMode) {
-                                OnlineEngineMode.OFFLINE_ONLY -> MaterialTheme.colorScheme.outline
-                                OnlineEngineMode.ONLINE_CLOUD -> PadmaTealPrimary
-                                OnlineEngineMode.GEMINI_AI -> PadmaTealPrimary
-                            },
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "জটিল বা আধুনিক বাংলিশ চ্যাট রূপান্তরের জন্য অনলাইন ক্লাউড বা এআই ইঞ্জিন বেছে নিন:",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Engine Option 1: Offline Only
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { viewModel.setOnlineEngineMode(OnlineEngineMode.OFFLINE_ONLY) },
-                    color = if (onlineEngineMode == OnlineEngineMode.OFFLINE_ONLY)
-                        PadmaTealPrimary.copy(alpha = 0.12f)
-                    else
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                    border = androidx.compose.foundation.BorderStroke(
-                        if (onlineEngineMode == OnlineEngineMode.OFFLINE_ONLY) 1.5.dp else 1.dp,
-                        if (onlineEngineMode == OnlineEngineMode.OFFLINE_ONLY) PadmaTealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = onlineEngineMode == OnlineEngineMode.OFFLINE_ONLY,
-                            onCheckedChange = { viewModel.setOnlineEngineMode(OnlineEngineMode.OFFLINE_ONLY) },
-                            colors = CheckboxDefaults.colors(checkedColor = PadmaTealPrimary)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = "১. অফলাইন ইঞ্জিন (ডিফল্ট - সবচেয়ে দ্রুত)",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (onlineEngineMode == OnlineEngineMode.OFFLINE_ONLY) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "০ মিলি-সেকেন্ড ল্যাটেন্সি। কোনো ইন্টারনেট ছাড়াই অভ্যন্তরীণ সমৃদ্ধ শব্দকোষ ও ফোনেটিক অ্যালগরিদমে রূপান্তর।",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                lineHeight = 18.sp
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Engine Option 2: Google Input Tools Cloud API
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { viewModel.setOnlineEngineMode(OnlineEngineMode.ONLINE_CLOUD) },
-                    color = if (onlineEngineMode == OnlineEngineMode.ONLINE_CLOUD)
-                        PadmaTealPrimary.copy(alpha = 0.12f)
-                    else
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                    border = androidx.compose.foundation.BorderStroke(
-                        if (onlineEngineMode == OnlineEngineMode.ONLINE_CLOUD) 1.5.dp else 1.dp,
-                        if (onlineEngineMode == OnlineEngineMode.ONLINE_CLOUD) PadmaTealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = onlineEngineMode == OnlineEngineMode.ONLINE_CLOUD,
-                            onCheckedChange = { viewModel.setOnlineEngineMode(OnlineEngineMode.ONLINE_CLOUD) },
-                            colors = CheckboxDefaults.colors(checkedColor = PadmaTealPrimary)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "২. Google ক্লাউড ট্রান্সলিটারেশন API",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (onlineEngineMode == OnlineEngineMode.ONLINE_CLOUD) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = PadmaTealPrimary.copy(alpha = 0.15f)
-                                ) {
-                                    Text(
-                                        text = "ফ্রি ও দ্রুত",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = PadmaTealPrimary,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "ক্লাউড এপিআই — কোনো কী ছাড়াই সরাসরি কার্যকর। জটিল বাক্য ও চলিত মেসেজ রূপান্তরে অত্যন্ত নির্ভুল।",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                lineHeight = 18.sp
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Engine Option 3: Gemini AI
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { viewModel.setOnlineEngineMode(OnlineEngineMode.GEMINI_AI) },
-                    color = if (onlineEngineMode == OnlineEngineMode.GEMINI_AI)
-                        PadmaTealPrimary.copy(alpha = 0.12f)
-                    else
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                    border = androidx.compose.foundation.BorderStroke(
-                        if (onlineEngineMode == OnlineEngineMode.GEMINI_AI) 1.5.dp else 1.dp,
-                        if (onlineEngineMode == OnlineEngineMode.GEMINI_AI) PadmaTealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = onlineEngineMode == OnlineEngineMode.GEMINI_AI,
-                                onCheckedChange = { viewModel.setOnlineEngineMode(OnlineEngineMode.GEMINI_AI) },
-                                colors = CheckboxDefaults.colors(checkedColor = PadmaTealPrimary)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = "৩. Gemini AI স্মার্ট ইঞ্জিন",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (onlineEngineMode == OnlineEngineMode.GEMINI_AI) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "উন্নত এআই কনটেক্সট মডেল — চলিত ভাষা, আধুনিক স্ল্যাং ও বানানের শতভাগ শুদ্ধ রূপান্তর।",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    lineHeight = 18.sp
-                                )
-                            }
-                        }
-
-                        if (onlineEngineMode == OnlineEngineMode.GEMINI_AI) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = customApiKeyInput,
-                                onValueChange = { customApiKeyInput = it },
-                                label = { Text("Gemini API Key (ঐচ্ছিক)") },
-                                placeholder = { Text("AI Studio Gemini API Key পেস্ট করুন") },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp),
-                                singleLine = true,
-                                trailingIcon = {
-                                    Button(
-                                        onClick = {
-                                            viewModel.setGeminiApiKey(customApiKeyInput)
-                                            Toast.makeText(context, "API Key সংরক্ষিত হয়েছে!", Toast.LENGTH_SHORT).show()
-                                        },
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                        modifier = Modifier.padding(end = 4.dp)
-                                    ) {
-                                        Text("সেভ", fontSize = 12.sp)
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Connection Test Button
-                OutlinedButton(
-                    onClick = {
-                        settingsCoroutineScope.launch {
-                            isTestingOnlineApi = true
-                            testResultFeedback = "টেস্ট করা হচ্ছে..."
-                            val testMode = when (onlineEngineMode) {
-                                OnlineEngineMode.GEMINI_AI -> LipiOnlineEngine.Provider.GEMINI_AI
-                                else -> LipiOnlineEngine.Provider.GOOGLE_INPUT_TOOLS
-                            }
-                            val res = LipiOnlineEngine.transliterateOnline(
-                                inputText = "Khawya suru korli naki abr??",
-                                provider = testMode,
-                                customGeminiApiKey = customApiKeyInput
-                            )
-                            isTestingOnlineApi = false
-                            res.onSuccess { text ->
-                                testResultFeedback = "সফল! রূপান্তর: $text"
-                            }.onFailure { err ->
-                                testResultFeedback = "ত্রুটি: ${err.message}"
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    if (isTestingOnlineApi) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("যাচাই করা হচ্ছে...")
-                    } else {
-                        Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(16.dp), tint = PadmaTealPrimary)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("অনলাইন কানেকশন টেস্ট করুন (Test API)")
-                    }
-                }
-
-                if (testResultFeedback != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = testResultFeedback!!,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(10.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        // Additional Formatting & Automation Preferences
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Text(
-                    text = "স্মার্ট অটোমেশন ও ফরম্যাটিং",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                val isAutoClipboardEnabled by viewModel.isAutoClipboardMonitoringEnabled.collectAsState()
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "স্বয়ংক্রিয় ক্লিপবোর্ড নজরদারি (Auto Monitor)",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "যেকোনো অ্যাপে লেখা কপি করলেই স্বয়ংক্রিয়ভাবে বাংলা অনুবাদ তৈরি হবে ও ভাসমান বলের পাশে প্রিভিউ কার্ড দেখাবে।",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Switch(
-                        checked = isAutoClipboardEnabled,
-                        onCheckedChange = { viewModel.setAutoClipboardMonitoring(it) },
-                        modifier = Modifier.testTag("auto_clipboard_switch")
-                    )
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "ইংরেজি সংখ্যাকে বাংলা সংখ্যায় রূপান্তর",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "যেমন: 123 → ১২৩",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = convertDigits,
-                        onCheckedChange = { viewModel.setConvertDigits(it) },
-                        modifier = Modifier.testTag("convert_digits_switch")
-                    )
-                }
-            }
-        }
-
-        // Lipi Version 5 Library & Text Normalization Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = PadmaTealPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "লিপি v5 লাইব্রেরি ও টেক্সট নরমালাইজার",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "১০০০+ একক শব্দভাণ্ডার, ৫৪টি বহুপ্রচলিত বাক্য (লংগেস্ট ফ্রেজ ম্যাচিং), চ্যাট স্ট্রেচ সংকোচন (যেমন: valoooo → ভালো) এবং বাংলা একাডেমি ব্যাকরণ প্রমিতকরণ সক্রিয় রয়েছে।",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 18.sp
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Button(
-                    onClick = {
-                        val res = viewModel.loadV5LibraryIntoWordbook(context, overwrite = false)
-                        if (res.errorMessage != null) {
-                            Toast.makeText(context, "ত্রুটি: ${res.errorMessage}", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(
-                                context,
-                                "লিপি v5 লাইব্রেরির ${res.addedCount}টি শব্দ ব্যক্তিগত শব্দকোষে যুক্ত হয়েছে! (মোট: ${res.totalEntries}টি)",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("load_v5_library_button"),
-                    colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "v5 লাইব্রেরির সব শব্দ ব্যক্তিগত তালিকায় লোড করুন",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
-                    )
-                }
-            }
-        }
-
-        // =========================================================================
-        // GROUP 3: Custom Wordbook & Data Management (কাস্টম শব্দকোষ ও ডাটা ব্যবস্থাপনা)
-        // =========================================================================
-        SettingsGroupHeader(
-            icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-            title = "কাস্টম শব্দকোষ ও ডাটা",
-            subtitle = "ব্যক্তিগত বাংলিশ শব্দের অর্থ তৈরি, সংরক্ষণ ও আমদানি-রপ্তানি",
-            badgeText = "${customWordbook.size}টি শব্দ"
-        )
-
-        // Custom User Wordbook & Data Management (Single Entry, Bulk File Import, Export, Format Guide)
-        val filteredWordbook = customWordbook.filter {
-            wordSearchQuery.isBlank() ||
-                    it.banglish.contains(wordSearchQuery, ignoreCase = true) ||
-                    it.bengali.contains(wordSearchQuery, ignoreCase = true) ||
-                    it.category.contains(wordSearchQuery, ignoreCase = true)
-        }
-
-        val sampleFormatInstruction = """# ==========================================
-# লিপি কাস্টম শব্দকোষ ফাইল ফরম্যাট নির্দেশিকা
-# ==========================================
-# প্রতিটি লাইনে একটি করে বাংলিশ ও বাংলা শব্দ লিখুন।
-# সমান (=) অথবা কমা (,) অথবা কোলন (:) দিয়ে আলাদা করুন।
-# '#' অথবা '//' দিয়ে শুরু হওয়া লাইনগুলো মন্তব্য হিসেবে গণ্য হবে।
-
-dhonnobad=ধন্যবাদ
-shagotom=স্বাগতম
-apni kemon achen=আপনি কেমন আছেন
-valo thakben=ভালো থাকবেন
-pera nai=প্যারা নাই
-chill koro=চিল করো
-meeting=মিটিং
-zoom=জুম
-office=অফিস
-link=লিংক
-pdf=পিডিএফ"""
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                // Header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "ব্যক্তিগত শব্দকোষ ও ডাটা ব্যবস্থাপনা",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "মোট ${customWordbook.size}টি শব্দ সংরক্ষিত (অনুবাদে অগ্রাধিকার পাবে)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    IconButton(
-                        onClick = { showInstructionsDialog = true },
-                        modifier = Modifier.testTag("format_guide_button")
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.HelpOutline,
-                            contentDescription = "ফরম্যাট নির্দেশিকা",
-                            tint = PadmaTealPrimary
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Action Buttons Bar (Single Entry, Import, Export)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = { isSingleEntryExpanded = true },
-                        modifier = Modifier
-                            .weight(1.2f)
-                            .testTag("add_single_word_button"),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isSingleEntryExpanded) PadmaTealPrimary else MaterialTheme.colorScheme.surfaceVariant
                         ),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = if (isSingleEntryExpanded) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            "একক এন্ট্রি",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isSingleEntryExpanded) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    OutlinedButton(
-                        onClick = { showImportDialog = true },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("bulk_import_button"),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                    ) {
-                        Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("ইমপোর্ট", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    OutlinedButton(
-                        onClick = { showExportDialog = true },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("export_data_button"),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                    ) {
-                        Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("এক্সপোর্ট", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // 1-Tap Load Extended Chat Training Data
-                OutlinedButton(
-                    onClick = {
-                        val result = viewModel.loadTrainedChatDataset()
-                        Toast.makeText(
-                            context,
-                            "${result.addedCount}টি নতুন চ্যাট শব্দ (যেমন: suru→শুরু, abr→আবার, naki→নাকি ইত্যাদি) শব্দকোষে সফলভাবে যুক্ত হয়েছে!",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("load_extended_chat_data_button"),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = PadmaTealPrimary
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.2.dp, PadmaTealPrimary.copy(alpha = 0.6f))
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = PadmaTealPrimary
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        "অতিরিক্ত চ্যাট ট্রেইন ডাটা লোড করুন (১০০+ নতুন শব্দ)",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "সেটিংস",
+                        tint = Color.White,
+                        modifier = Modifier.size(26.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.width(16.dp))
 
-                // Dedicated Single Data Entry Card / Section
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, PadmaTealPrimary.copy(alpha = 0.4f)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("single_data_entry_card")
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = null,
-                                    tint = PadmaTealPrimary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "একক ডাটা এন্ট্রি (Single Data Entry)",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Text(
-                                text = if (isSingleEntryExpanded) "লুকান ▲" else "খুলুন ▼",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = PadmaTealPrimary,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .clickable { isSingleEntryExpanded = !isSingleEntryExpanded }
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                                    .testTag("toggle_single_data_entry_expanded")
-                            )
-                        }
-
-                        if (isSingleEntryExpanded) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                text = "একটি নির্দিষ্ট বাংলিশ শব্দ/বাক্য এবং তার নিজস্ব বাংলা অর্থ শব্দকোষে যোগ করুন:",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            OutlinedTextField(
-                                value = singleEntryBanglish,
-                                onValueChange = { singleEntryBanglish = it },
-                                label = { Text("বাংলিশ শব্দ / বাক্য (যেমন: pera nai)") },
-                                placeholder = { Text("যেমন: pera nai, valo thakben, chill koro") },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("single_data_entry_banglish_input"),
-                                singleLine = true,
-                                shape = RoundedCornerShape(10.dp)
-                            )
-
-                            // Real-time transliteration suggestion
-                            val autoSuggestedBengali = remember(singleEntryBanglish) {
-                                if (singleEntryBanglish.isNotBlank()) {
-                                    MixedScriptTokenizer.process(singleEntryBanglish).convertedText
-                                } else ""
-                            }
-
-                            if (autoSuggestedBengali.isNotBlank() && autoSuggestedBengali != singleEntryBengali) {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(PadmaTealPrimary.copy(alpha = 0.12f))
-                                        .clickable { singleEntryBengali = autoSuggestedBengali }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                                        .testTag("single_data_entry_autosuggest_chip"),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = "💡 লিপির তাৎক্ষণিক রূপান্তর: $autoSuggestedBengali",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = PadmaTealPrimary,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Text(
-                                        text = "ব্যবহার করুন ↵",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = PadmaTealPrimary,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            OutlinedTextField(
-                                value = singleEntryBengali,
-                                onValueChange = { singleEntryBengali = it },
-                                label = { Text("বাংলা রূপ / অর্থ (যেমন: প্যারা নাই)") },
-                                placeholder = { Text("যেমন: প্যারা নাই, ভালো থাকবেন") },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("single_data_entry_bengali_input"),
-                                singleLine = true,
-                                shape = RoundedCornerShape(10.dp)
-                            )
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // Category Chips
-                            Text(
-                                text = "ক্যাটাগরি নির্বাচন:",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            val categoryOptions = listOf("সাধারণ", "কথোপকথন", "অফিস", "স্ল্যাং", "কাস্টম")
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                categoryOptions.forEach { cat ->
-                                    val isSelected = singleEntryCategory == cat
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (isSelected) PadmaTealPrimary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .clickable { singleEntryCategory = cat }
-                                            .testTag("single_entry_category_$cat")
-                                    ) {
-                                        Text(
-                                            text = cat,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Button(
-                                    onClick = {
-                                        if (singleEntryBanglish.isNotBlank() && singleEntryBengali.isNotBlank()) {
-                                            viewModel.addCustomWord(singleEntryBanglish, singleEntryBengali, singleEntryCategory)
-                                            Toast.makeText(context, "✓ '${singleEntryBanglish.trim()}' শব্দকোষে যুক্ত হয়েছে!", Toast.LENGTH_SHORT).show()
-                                            singleEntryBanglish = ""
-                                            singleEntryBengali = ""
-                                        } else {
-                                            Toast.makeText(context, "বাংলিশ ও বাংলা দুটি ঘরই পূরণ করুন", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("save_single_data_entry_button"),
-                                    colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("শব্দকোষে সংরক্ষণ করুন", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                }
-
-                                if (singleEntryBanglish.isNotBlank() || singleEntryBengali.isNotBlank()) {
-                                    OutlinedButton(
-                                        onClick = {
-                                            singleEntryBanglish = ""
-                                            singleEntryBengali = ""
-                                        },
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.testTag("clear_single_data_entry_button")
-                                    ) {
-                                        Text("মুছুন", fontSize = 12.sp)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Search Bar inside Custom Wordbook
-                if (customWordbook.isNotEmpty()) {
-                    OutlinedTextField(
-                        value = wordSearchQuery,
-                        onValueChange = { wordSearchQuery = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("wordbook_search_input"),
-                        placeholder = { Text("সংরক্ষিত শব্দ অনুসন্ধান করুন...", fontSize = 13.sp) },
-                        leadingIcon = {
-                            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
-                        },
-                        trailingIcon = {
-                            if (wordSearchQuery.isNotBlank()) {
-                                IconButton(onClick = { wordSearchQuery = "" }) {
-                                    Icon(Icons.Default.Close, contentDescription = "মুছুন", modifier = Modifier.size(16.dp))
-                                }
-                            }
-                        },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-
-                // Word List Container
-                if (filteredWordbook.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = if (wordSearchQuery.isNotBlank())
-                                "কোনো শব্দ খুঁজে পাওয়া যায়নি"
-                            else
-                                "কোনো কাস্টম শব্দ নেই। উপরের বোতাম চেপে যুক্ত করুন।",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    val displayedWords = filteredWordbook.take(50)
-                    val listModifier = if (filteredWordbook.size > 6) {
-                        Modifier
-                            .fillMaxWidth()
-                            .height(260.dp)
-                            .verticalScroll(rememberScrollState())
-                    } else {
-                        Modifier.fillMaxWidth()
-                    }
-
-                    Column(
-                        modifier = listModifier,
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        displayedWords.forEach { entry ->
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = entry.banglish,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = PadmaTealPrimary
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(
-                                                text = "→",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.outline
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(
-                                                text = entry.bengali,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        }
-                                        Text(
-                                            text = entry.category,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.outline
-                                        )
-                                    }
-                                    IconButton(
-                                        onClick = { viewModel.removeCustomWord(entry.id) },
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Delete,
-                                            contentDescription = "মুছুন",
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (filteredWordbook.size > 50) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "প্রথম ৫০টি প্রদর্শিত হচ্ছে (মোট ${filteredWordbook.size}টি শব্দ সংরক্ষিত, নির্দিষ্ট শব্দ খুঁজতে উপরের সার্চ ব্যবহার করুন)",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.padding(horizontal = 4.dp)
-                        )
-                    }
-                }
-
-                // Bottom Utilities Row: Reset to default or clear all
-                if (customWordbook.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        androidx.compose.material3.TextButton(
-                            onClick = {
-                                viewModel.resetWordsToDefault()
-                                Toast.makeText(context, "ডিফল্ট শব্দাবলি রিস্টোর করা হয়েছে", Toast.LENGTH_SHORT).show()
-                            }
-                        ) {
-                            Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("ডিফল্ট শব্দ রিস্টোর", fontSize = 11.sp)
-                        }
-
-                        androidx.compose.material3.TextButton(
-                            onClick = { showClearConfirmDialog = true }
-                        ) {
-                            Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("সব মুছুন", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
-                        }
-                    }
-                }
-            }
-        }
-
-        // -------------------------------------------------------------
-        // DIALOG 1: Single Word Entry Dialog
-        // -------------------------------------------------------------
-        if (showAddWordDialog) {
-            val autoSuggested = remember(newBanglish) {
-                if (newBanglish.isNotBlank()) MixedScriptTokenizer.process(newBanglish).convertedText else ""
-            }
-
-            AlertDialog(
-                onDismissRequest = { showAddWordDialog = false },
-                title = { Text("একক ডাটা এন্ট্রি (নতুন শব্দ যোগ)", fontWeight = FontWeight.Bold) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = "আপনার বাংলিশ লেখার সাথে কাঙ্ক্ষিত বাংলা অর্থ লিখুন:",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        OutlinedTextField(
-                            value = newBanglish,
-                            onValueChange = { newBanglish = it },
-                            label = { Text("বাংলিশ শব্দ / বাক্য (যেমন: pera nai)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-
-                        if (autoSuggested.isNotBlank() && autoSuggested != newBengali) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = PadmaTealPrimary.copy(alpha = 0.12f),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { newBengali = autoSuggested }
-                                    .padding(vertical = 2.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = "💡 সাজেশন: $autoSuggested",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = PadmaTealPrimary
-                                    )
-                                    Text(
-                                        text = "বসিয়ে দিন ↵",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = PadmaTealPrimary
-                                    )
-                                }
-                            }
-                        }
-
-                        OutlinedTextField(
-                            value = newBengali,
-                            onValueChange = { newBengali = it },
-                            label = { Text("বাংলা রূপ (যেমন: প্যারা নাই)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-                        OutlinedTextField(
-                            value = newCategory,
-                            onValueChange = { newCategory = it },
-                            label = { Text("ক্যাটাগরি (ঐচ্ছিক)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            if (newBanglish.isNotBlank() && newBengali.isNotBlank()) {
-                                viewModel.addCustomWord(newBanglish, newBengali, newCategory)
-                                newBanglish = ""
-                                newBengali = ""
-                                showAddWordDialog = false
-                                Toast.makeText(context, "শব্দ যুক্ত হয়েছে!", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "বাংলিশ ও বাংলা দুটি ঘরই পূরণ করুন", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary)
-                    ) {
-                        Text("সংরক্ষণ করুন")
-                    }
-                },
-                dismissButton = {
-                    androidx.compose.material3.TextButton(onClick = { showAddWordDialog = false }) {
-                        Text("বাতিল")
-                    }
-                }
-            )
-        }
-
-        // -------------------------------------------------------------
-        // DIALOG 2: Vast Import Dialog (File Picker + Bulk Paste)
-        // -------------------------------------------------------------
-        if (showImportDialog) {
-            AlertDialog(
-                onDismissRequest = { showImportDialog = false },
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.FileUpload, contentDescription = null, tint = PadmaTealPrimary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("শব্দকোষ বৃহৎ ইমপোর্ট", fontWeight = FontWeight.Bold)
-                    }
-                },
-                text = {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "টেক্সট ফাইল (.txt / .csv / .json) নির্বাচন করুন অথবা নিচে সরাসরি লেখা পেস্ট করুন:",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        // 1-Tap File Picker Button
-                        Button(
-                            onClick = {
-                                filePickerLauncher.launch("*/*")
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary.copy(alpha = 0.9f)),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(Icons.Default.FileUpload, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("📁 ফাইল ম্যানেজার থেকে ফাইল নির্বাচন করুন")
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            HorizontalDivider(modifier = Modifier.weight(1f))
-                            Text(
-                                " অথবা সরাসরি পেস্ট করুন ",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                            HorizontalDivider(modifier = Modifier.weight(1f))
-                        }
-
-                        OutlinedTextField(
-                            value = importTextContent,
-                            onValueChange = { importTextContent = it },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(130.dp),
-                            placeholder = {
-                                Text(
-                                    "dhonnobad=ধন্যবাদ\nshagotom=স্বাগতম\npera nai=প্যারা নাই\nmeeting=মিটিং",
-                                    fontSize = 12.sp
-                                )
-                            },
-                            maxLines = 10
-                        )
-
-                        // Overwrite toggle
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { importOverwrite = !importOverwrite }
-                        ) {
-                            Checkbox(
-                                checked = importOverwrite,
-                                onCheckedChange = { importOverwrite = it },
-                                colors = CheckboxDefaults.colors(checkedColor = PadmaTealPrimary)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "বিদ্যমান শব্দ প্রতিস্থাপন করুন (Overwrite)",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-
-                        // Help hint button
-                        androidx.compose.material3.TextButton(
-                            onClick = { showInstructionsDialog = true },
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("ফাইল ফরম্যাট কেমন হবে? নির্দেশিকা দেখুন", fontSize = 11.sp)
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            if (importTextContent.isNotBlank()) {
-                                val result = viewModel.bulkImportWords(importTextContent, overwrite = importOverwrite)
-                                if (result.errorMessage != null) {
-                                    Toast.makeText(context, "ত্রুটি: ${result.errorMessage}", Toast.LENGTH_LONG).show()
-                                } else {
-                                    Toast.makeText(context, "সফলভাবে ${result.addedCount}টি শব্দ আমদানি করা হয়েছে!", Toast.LENGTH_LONG).show()
-                                    importTextContent = ""
-                                    showImportDialog = false
-                                }
-                            } else {
-                                Toast.makeText(context, "ফাইল নির্বাচন করুন অথবা টেক্সট বক্সে লিখুন", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary)
-                    ) {
-                        Text("ইমপোর্ট সম্পন্ন করুন")
-                    }
-                },
-                dismissButton = {
-                    androidx.compose.material3.TextButton(onClick = { showImportDialog = false }) {
-                        Text("বন্ধ")
-                    }
-                }
-            )
-        }
-
-        // -------------------------------------------------------------
-        // DIALOG 3: Export Custom Data Dialog
-        // -------------------------------------------------------------
-        if (showExportDialog) {
-            val exportText = viewModel.exportWordsAsText()
-            val exportJson = viewModel.exportWordsAsJson()
-            var selectedExportFormat by remember { mutableStateOf("TXT") } // TXT or JSON
-
-            AlertDialog(
-                onDismissRequest = { showExportDialog = false },
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.FileDownload, contentDescription = null, tint = PadmaTealPrimary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("শব্দকোষ এক্সপোর্ট (${customWordbook.size}টি শব্দ)", fontWeight = FontWeight.Bold)
-                    }
-                },
-                text = {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(
-                            text = "আপনার সংরক্ষিত কাস্টম শব্দাবলি অন্য ফোনে বা ব্যাকআপ রাখার জন্য এক্সপোর্ট করুন:",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        // Format selector
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            androidx.compose.material3.FilterChip(
-                                selected = selectedExportFormat == "TXT",
-                                onClick = { selectedExportFormat = "TXT" },
-                                label = { Text("টেক্সট ফাইল (.txt)") }
-                            )
-                            androidx.compose.material3.FilterChip(
-                                selected = selectedExportFormat == "JSON",
-                                onClick = { selectedExportFormat = "JSON" },
-                                label = { Text("JSON ফাইল (.json)") }
-                            )
-                        }
-
-                        // Preview box
-                        val activeContent = if (selectedExportFormat == "TXT") exportText else exportJson
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(140.dp)
-                        ) {
-                            Text(
-                                text = activeContent,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                modifier = Modifier
-                                    .padding(8.dp)
-                                    .verticalScroll(rememberScrollState()),
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        OutlinedButton(
-                            onClick = {
-                                val content = if (selectedExportFormat == "TXT") exportText else exportJson
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                val clip = ClipData.newPlainText("Lipi Wordbook Export", content)
-                                clipboard?.setPrimaryClip(clip)
-                                Toast.makeText(context, "ক্লিপবোর্ডে কপি করা হয়েছে!", Toast.LENGTH_SHORT).show()
-                            }
-                        ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("কপি")
-                        }
-
-                        Button(
-                            onClick = {
-                                val content = if (selectedExportFormat == "TXT") exportText else exportJson
-                                val intent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_SUBJECT, if (selectedExportFormat == "TXT") "lipi_custom_dictionary.txt" else "lipi_custom_dictionary.json")
-                                    putExtra(Intent.EXTRA_TEXT, content)
-                                }
-                                context.startActivity(Intent.createChooser(intent, "লিপি শব্দকোষ ফাইল পাঠান বা সংরক্ষণ করুন"))
-                                showExportDialog = false
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary)
-                        ) {
-                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("শেয়ার / সেভ")
-                        }
-                    }
-                },
-                dismissButton = {
-                    androidx.compose.material3.TextButton(onClick = { showExportDialog = false }) {
-                        Text("বন্ধ")
-                    }
-                }
-            )
-        }
-
-        // -------------------------------------------------------------
-        // DIALOG 4: File Format Instructions Dialog (Detailed Guide)
-        // -------------------------------------------------------------
-        if (showInstructionsDialog) {
-            AlertDialog(
-                onDismissRequest = { showInstructionsDialog = false },
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Info, contentDescription = null, tint = PadmaTealPrimary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("ফাইল ফরম্যাট নির্দেশিকা", fontWeight = FontWeight.Bold)
-                    }
-                },
-                text = {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(
-                            text = "ফাইলটি যেকোনো সাধারণ টেক্সট ফাইল (.txt বা .csv) বা JSON হতে পারে।",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "অ্যাপ সেটিংস",
+                            style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-
-                        Text(
-                            text = "১. প্রতি লাইনে একটি করে বাংলিশ ও বাংলা জোড়া লিখুন:\n" +
-                                    "   • banglish=বাংলা  (যেমন: dhonnobad=ধন্যবাদ)\n" +
-                                    "   • banglish,বাংলা  (যেমন: shagotom,স্বাগতম)\n" +
-                                    "   • banglish:বাংলা  (যেমন: meeting:মিটিং)\n" +
-                                    "২. '#' দিয়ে শুরু হওয়া লাইনগুলো মন্তব্য হিসেবে এড়িয়ে যাওয়া হবে।\n" +
-                                    "৩. ফাইলে একসাথে হাজার হাজার লাইন আমদানি করা সম্ভব।\n" +
-                                    "৪. JSON ফরম্যাটে: [{\"banglish\": \"...\", \"bengali\": \"...\"}] সমর্থন করে।",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 18.sp
-                        )
-
-                        Text(
-                            text = "নমুনা ফাইল প্রিভিউ:",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = PadmaTealPrimary
-                        )
-
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = sampleFormatInstruction,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                modifier = Modifier.padding(10.dp),
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                            val clip = ClipData.newPlainText("Sample Lipi Format", sampleFormatInstruction)
-                            clipboard?.setPrimaryClip(clip)
-                            Toast.makeText(context, "নমুনা ফরম্যাট ক্লিপবোর্ডে কপি হয়েছে!", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary)
-                    ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("নমুনা কপি করুন")
-                    }
-                },
-                dismissButton = {
-                    androidx.compose.material3.TextButton(onClick = { showInstructionsDialog = false }) {
-                        Text("বুঝেছি")
-                    }
-                }
-            )
-        }
-
-        // -------------------------------------------------------------
-        // DIALOG 5: Clear All Confirmation Dialog
-        // -------------------------------------------------------------
-        if (showClearConfirmDialog) {
-            AlertDialog(
-                onDismissRequest = { showClearConfirmDialog = false },
-                title = { Text("সব কাস্টম শব্দ মুছতে চান?", fontWeight = FontWeight.Bold) },
-                text = {
-                    Text("আপনার সংরক্ষিত সকল শব্দ মুছে যাবে। প্রয়োজন হলে আগে 'এক্সপোর্ট' করে ব্যাকআপ রাখুন।")
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            viewModel.clearAllCustomWords()
-                            showClearConfirmDialog = false
-                            Toast.makeText(context, "সকল কাস্টম শব্দ মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Text("হ্যাঁ, সব মুছুন")
-                    }
-                },
-                dismissButton = {
-                    androidx.compose.material3.TextButton(onClick = { showClearConfirmDialog = false }) {
-                        Text("বাতিল")
-                    }
-                }
-            )
-        }
-
-        // =========================================================================
-        // GROUP 4: System, Permissions & Battery Protection (সিস্টেম অনুমতি ও ব্যাটারি সুরক্ষা)
-        // =========================================================================
-        SettingsGroupHeader(
-            icon = Icons.Default.Lock,
-            title = "সিস্টেম অনুমতি ও ব্যাটারি সুরক্ষা",
-            subtitle = "ব্যাকগ্রাউন্ডে সার্বক্ষণিক সচল রাখা ও সিস্টেম নিরাপত্তা",
-            badgeText = if (isIgnoringBatteryOptimizations) "সুরক্ষিত" else "সতর্কতা"
-        )
-
-        // Overlay Permission Status Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Text(
-                    text = "সিস্টেম অনুমতি ও নিরাপত্তা",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                PermissionStatusRow(
-                    title = "ভাসমান উইন্ডো অনুমতি (Display over other apps)",
-                    description = "হোয়াটসঅ্যাপ বা মেসেঞ্জারের ওপর 'ল' ব্যাজ ভাসানোর জন্য প্রয়োজন।",
-                    isGranted = overlayGranted,
-                    onActionClick = {
-                        val intent = Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:${context.packageName}")
-                        )
-                        try {
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "অনুমতি সেটিংস খোলা যাচ্ছে না", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                )
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Safe Mode",
-                        tint = Color(0xFF00A896),
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Column {
-                        Text(
-                            text = "প্লে প্রোটেক্ট নিরাপদ কপি মোড",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "কোনো সংবেদনশীল পারমিশন ছাড়াই নিরাপদ ওভারলে ও কপি-পেস্টের মাধ্যমে কাজ করে। গুগল প্লে প্রোটেক্টে কোনো ব্লক নেই।",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-
-        // Battery Optimization & Long-running Service Protection Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isIgnoringBatteryOptimizations)
-                    MaterialTheme.colorScheme.surface
-                else
-                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = if (isIgnoringBatteryOptimizations) Icons.Default.CheckCircle else Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = if (isIgnoringBatteryOptimizations) PadmaTealPrimary else MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "সার্বক্ষণিক নোটিফিকেশন ও ব্যাকগ্রাউন্ড রক্ষা",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = if (isIgnoringBatteryOptimizations)
-                        "✓ ব্যাটারি অপটিমাইজেশন বন্ধ রয়েছে। লিপিকে ব্যাকগ্রাউন্ডে অ্যান্ড্রয়েড সিস্টেম বা OEM সেভার কিল করবে না এবং নোটিফিকেশন বার সার্বক্ষণিক দৃশ্যমান থাকবে।"
-                    else
-                        "কিছু ডিভাইসে (Xiaomi, Samsung, Oppo, Vivo, Realme) কিছুক্ষণ পর সিস্টেম ব্যাকগ্রাউন্ড সার্ভিস ও নোটিফিকেশন বন্ধ করে দেয়। নোটিফিকেশন ও অনুবাদ বল সর্বদা চালু রাখতে ব্যাটারি অপটিমাইজেশন বন্ধ (Unrestricted) করুন।",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (!isIgnoringBatteryOptimizations) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        onClick = {
-                            val intent = Intent().apply {
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                                    action = Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
-                                } else {
-                                    action = Settings.ACTION_SETTINGS
-                                }
-                            }
-                            try {
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "সেটিংস খোলা সম্ভব হয়নি", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = PadmaTealPrimary),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("ব্যাটারি আনরেস্ট্রিকটেড (Unrestricted) করুন", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-
-        // Privacy & Offline Security Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = PadmaTealPrimary.copy(alpha = 0.08f))
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.Lock,
-                        contentDescription = null,
-                        tint = PadmaTealPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "গোপনীয়তা ও অফলাইন সুরক্ষা",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = PadmaTealPrimary
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "• সমস্ত টেক্সট প্রসেসিং ১০০% আপনার ডিভাইসে অফলাইনে সম্পন্ন হয়।\n• লিপি কোনো মেসেজ সার্ভারে পাঠায় না এবং কোনো কথোপকথন ব্যাকগ্রাউন্ডে রেকর্ড করে না।\n• মূল বার্তা কখনোই স্বয়ংক্রিয়ভাবে পরিবর্তন বা পাঠানো হয় না; নিয়ন্ত্রণ সর্বদা আপনার হাতে।",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    lineHeight = 20.sp
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun SettingsGroupHeader(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    subtitle: String,
-    badgeText: String? = null
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 10.dp, bottom = 2.dp),
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(PadmaTealPrimary.copy(alpha = 0.16f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = PadmaTealPrimary,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    if (badgeText != null) {
-                        Spacer(modifier = Modifier.width(8.dp))
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = PadmaTealPrimary.copy(alpha = 0.18f)
+                            color = PadmaTealPrimary.copy(alpha = 0.12f)
                         ) {
                             Text(
-                                text = badgeText,
+                                text = "v1.4.0",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = PadmaTealPrimary,
                                 fontWeight = FontWeight.Bold,
@@ -2270,105 +208,99 @@ fun SettingsGroupHeader(
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    Text(
+                        text = "লিপির ভাসমান ফিচার, অনুবাদ ইঞ্জিন ও ব্যক্তিগত ডাটা কনফিগার করুন",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
-    }
-}
 
-@Composable
-fun GuideStepRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    stepNumber: String,
-    title: String,
-    description: String
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape)
-                .background(PadmaTealPrimary),
-            contentAlignment = Alignment.Center
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Group 1: Floating & Notifications
+        SettingsGroupCard(
+            group = SettingsGroup.FLOATING_NOTIFICATION,
+            badgeText = if (isFloatingEnabled) "সক্রিয়" else "বন্ধ",
+            onClick = { onOpenGroup(SettingsGroup.FLOATING_NOTIFICATION) }
+        )
+
+        val engineBadge = when (onlineEngineMode) {
+            com.example.lipi.data.OnlineEngineMode.OFFLINE_ONLY -> "অফলাইন"
+            com.example.lipi.data.OnlineEngineMode.ONLINE_CLOUD -> "Google ক্লাউড"
+            com.example.lipi.data.OnlineEngineMode.GEMINI_AI -> "Gemini AI"
+        }
+
+        // Group 2: Engine & Formatting
+        SettingsGroupCard(
+            group = SettingsGroup.ENGINE_FORMATTING,
+            badgeText = engineBadge,
+            onClick = { onOpenGroup(SettingsGroup.ENGINE_FORMATTING) }
+        )
+
+        // Group 3: Wordbook & Data Management
+        SettingsGroupCard(
+            group = SettingsGroup.WORDBOOK_DATA,
+            badgeText = "${customWordbook.size}টি শব্দ",
+            onClick = { onOpenGroup(SettingsGroup.WORDBOOK_DATA) }
+        )
+
+        // Group 4: System & Battery Protection
+        SettingsGroupCard(
+            group = SettingsGroup.SYSTEM_BATTERY,
+            badgeText = if (overlayGranted && isIgnoringBattery) "সুরক্ষিত" else "সতর্কতা",
+            onClick = { onOpenGroup(SettingsGroup.SYSTEM_BATTERY) }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Privacy & System Security Tip
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = PadmaTealPrimary.copy(alpha = 0.06f))
         ) {
-            Text(
-                text = stepNumber,
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp
-            )
-        }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(PadmaTealPrimary.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = "নিরাপত্তা",
+                        tint = PadmaTealPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 18.sp
-            )
-        }
-    }
-}
-
-@Composable
-fun PermissionStatusRow(
-    title: String,
-    description: String,
-    isGranted: Boolean,
-    onActionClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = if (isGranted) Icons.Default.CheckCircle else Icons.Default.Warning,
-                    contentDescription = null,
-                    tint = if (isGranted) CyanAccent else TerracottaSecondary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "১০০% নিরাপদ ও অন-ডিভাইস প্রাইভেসি",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = PadmaTealPrimary
+                    )
+                    Text(
+                        text = "লিপি কোনো ব্যক্তিগত বার্তা বা কীস্ট্রোক রেকর্ড করে না। যেকোনো ক্যাটাগরিতে ট্যাপ করে বিস্তারিত সেটিংস পরিবর্তন করুন।",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 16.sp
+                    )
+                }
             }
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        Spacer(modifier = Modifier.width(10.dp))
-
-        OutlinedButton(
-            onClick = onActionClick,
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Text(if (isGranted) "যাচাই করুন" else "অনুমতি দিন", fontSize = 12.sp)
         }
     }
 }

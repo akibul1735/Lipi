@@ -7,6 +7,7 @@ import org.junit.Rule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.performClick
 import com.example.lipi.ui.SettingsScreen
 import com.example.lipi.ui.LipiViewModel
 import org.junit.Assert.assertEquals
@@ -115,7 +116,22 @@ class ExampleRobolectricTest {
             SettingsScreen(viewModel = viewModel)
         }
 
-        composeTestRule.onNodeWithTag("floating_master_switch").assertIsDisplayed()
+        // Verify root screen displays all 4 unexpanded group cards
+        composeTestRule.onNodeWithTag("settings_group_floating_notification").assertExists()
+        composeTestRule.onNodeWithTag("settings_group_engine_formatting").assertExists()
+        composeTestRule.onNodeWithTag("settings_group_wordbook_data").assertExists()
+        composeTestRule.onNodeWithTag("settings_group_system_battery").assertExists()
+
+        // Click into Group 1 (Floating & Notification)
+        composeTestRule.onNodeWithTag("settings_group_floating_notification").performClick()
+        composeTestRule.onNodeWithTag("floating_master_switch").assertExists()
+
+        // Navigate back
+        composeTestRule.onNodeWithTag("settings_back_button").performClick()
+        composeTestRule.onNodeWithTag("settings_group_wordbook_data").assertExists()
+
+        // Click into Group 3 (Wordbook Data)
+        composeTestRule.onNodeWithTag("settings_group_wordbook_data").performClick()
         composeTestRule.onNodeWithTag("single_data_entry_card").assertExists()
         composeTestRule.onNodeWithTag("single_data_entry_banglish_input").assertExists()
         composeTestRule.onNodeWithTag("save_single_data_entry_button").assertExists()
