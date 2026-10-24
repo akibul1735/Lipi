@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Button
@@ -621,7 +622,11 @@ fun TransliterationStyleBottomSheet(
 fun OnlineEngineBottomSheet(
     currentMode: OnlineEngineMode,
     currentApiKey: String,
-    currentModel: String = "gemini-2.5-flash",
+    currentModel: String = "gemini-3.8-flash",
+    fetchedModels: List<LipiOnlineEngine.GeminiModelInfo> = emptyList(),
+    isFetchingModels: Boolean = false,
+    fetchFeedback: String? = null,
+    onFetchModels: (String) -> Unit = {},
     onModeSelected: (OnlineEngineMode) -> Unit,
     onApiKeySaved: (String) -> Unit,
     onModelSelected: (String) -> Unit = {},
@@ -631,8 +636,27 @@ fun OnlineEngineBottomSheet(
     var apiKeyInput by remember(currentApiKey) { mutableStateOf(currentApiKey) }
     var selectedModel by remember(currentModel) { mutableStateOf(currentModel) }
     var customModelInput by remember { mutableStateOf("") }
-    var isCustomModelSelected by remember {
-        mutableStateOf(LipiOnlineEngine.AVAILABLE_GEMINI_MODELS.none { it.modelId == currentModel })
+    
+    // Auto-fetch latest models when sheet opens if API key is present
+    androidx.compose.runtime.LaunchedEffect(apiKeyInput) {
+        if (apiKeyInput.isNotBlank() && fetchedModels.isEmpty()) {
+            onFetchModels(apiKeyInput)
+        }
+    }
+
+    val allAvailableModels = remember(fetchedModels) {
+        if (fetchedModels.isEmpty()) {
+            LipiOnlineEngine.AVAILABLE_GEMINI_MODELS
+        } else {
+            // Deduplicate: prioritize fetched models, then append missing defaults
+            val fetchedIds = fetchedModels.map { it.modelId }.toSet()
+            val missingDefaults = LipiOnlineEngine.AVAILABLE_GEMINI_MODELS.filter { it.modelId !in fetchedIds }
+            fetchedModels + missingDefaults
+        }
+    }
+
+    var isCustomModelSelected by remember(selectedModel, allAvailableModels) {
+        mutableStateOf(allAvailableModels.none { it.modelId == selectedModel })
     }
     var isTesting by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
@@ -837,29 +861,74 @@ fun OnlineEngineBottomSheet(
 
                         // Model Selection
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.AutoAwesome,
-                                    contentDescription = null,
-                                    tint = PadmaTealPrimary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "সর্বশেষ Gemini মডেল নির্বাচন করুন:",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = PadmaTealPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Gemini মডেল নির্বাচন:",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+
+                                // Auto-Fetch Button
+                                OutlinedButton(
+                                    onClick = { onFetchModels(apiKeyInput) },
+                                    enabled = !isFetchingModels && apiKeyInput.isNotBlank(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(32.dp)
+                                ) {
+                                    if (isFetchingModels) {
+                                        androidx.compose.material3.CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            strokeWidth = 2.dp,
+                                            color = PadmaTealPrimary
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("ফেচ হচ্ছে...", fontSize = 11.sp)
+                                    } else {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("মডেল রিফ্রেশ", fontSize = 11.sp)
+                                    }
+                                }
                             }
+
                             Text(
-                                text = "দিন দিন নতুন মডেল আসার সাথে সাথে আপনার পছন্দের মডেলটি নির্বাচন বা কাস্টমাইজ করুন:",
+                                text = "গুগলের সর্বশেষ ৩.৮ সহ সব মডেলের তালিকা অটো-ফেচ করা হয়। পছন্দমতো মডেল বেছে নিন:",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
 
-                            // Predefined Models
-                            LipiOnlineEngine.AVAILABLE_GEMINI_MODELS.forEach { modelInfo ->
+                            if (fetchFeedback != null) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (fetchFeedback.contains("সফল")) PadmaTealPrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = fetchFeedback,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (fetchFeedback.contains("সফল")) PadmaTealPrimary else MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+
+                            // Dynamic / Available Models List
+                            allAvailableModels.forEach { modelInfo ->
                                 val isSelected = !isCustomModelSelected && selectedModel == modelInfo.modelId
                                 Surface(
                                     modifier = Modifier
@@ -899,12 +968,28 @@ fun OnlineEngineBottomSheet(
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text(
-                                                    text = modelInfo.displayName,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = if (isSelected) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
-                                                )
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = modelInfo.displayName,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isSelected) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    if (modelInfo.isLiveFetched) {
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Surface(
+                                                            shape = RoundedCornerShape(3.dp),
+                                                            color = Color(0xFF388E3C).copy(alpha = 0.15f)
+                                                        ) {
+                                                            Text(
+                                                                text = "লাইভ API",
+                                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                                                color = Color(0xFF2E7D32),
+                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                                 Surface(
                                                     shape = RoundedCornerShape(4.dp),
                                                     color = if (modelInfo.isRecommended) PadmaTealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
@@ -980,7 +1065,7 @@ fun OnlineEngineBottomSheet(
                                     if (isCustomModelSelected) {
                                         Spacer(modifier = Modifier.height(8.dp))
                                         OutlinedTextField(
-                                            value = customModelInput.ifEmpty { if (LipiOnlineEngine.AVAILABLE_GEMINI_MODELS.none { it.modelId == selectedModel }) selectedModel else "" },
+                                            value = customModelInput.ifEmpty { if (allAvailableModels.none { it.modelId == selectedModel }) selectedModel else "" },
                                             onValueChange = { customModelInput = it },
                                             label = { Text("মডেল আইডি লিখুন") },
                                             placeholder = { Text("যেমন: gemini-2.0-flash-lite") },

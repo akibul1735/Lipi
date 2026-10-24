@@ -61,6 +61,9 @@ fun EngineFormattingGroupScreen(
     val onlineEngineMode by viewModel.onlineEngineMode.collectAsState()
     val geminiApiKey by viewModel.geminiApiKey.collectAsState()
     val geminiModel by viewModel.geminiModel.collectAsState()
+    val fetchedGeminiModels by viewModel.fetchedGeminiModels.collectAsState()
+    val isFetchingModels by viewModel.isFetchingGeminiModels.collectAsState()
+    val fetchFeedback by viewModel.fetchModelsFeedback.collectAsState()
     val isAutoClipboardEnabled by viewModel.isAutoClipboardMonitoringEnabled.collectAsState()
     val convertDigits by viewModel.convertDigitsToBengali.collectAsState()
 
@@ -235,6 +238,10 @@ fun EngineFormattingGroupScreen(
             currentMode = onlineEngineMode,
             currentApiKey = geminiApiKey,
             currentModel = geminiModel,
+            fetchedModels = fetchedGeminiModels,
+            isFetchingModels = isFetchingModels,
+            fetchFeedback = fetchFeedback,
+            onFetchModels = { key -> viewModel.fetchLatestGeminiModels(key) },
             onModeSelected = {
                 viewModel.setOnlineEngineMode(it)
                 Toast.makeText(context, "ইঞ্জিন আপডেট হয়েছে!", Toast.LENGTH_SHORT).show()

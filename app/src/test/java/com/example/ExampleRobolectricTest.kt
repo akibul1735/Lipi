@@ -153,14 +153,14 @@ class ExampleRobolectricTest {
         val repository = LipiRepository(context)
         val viewModel = LipiViewModel(repository)
 
-        // Default model should be gemini-2.5-flash
-        assertEquals("gemini-2.5-flash", repository.geminiModel.value)
-        assertEquals("gemini-2.5-flash", viewModel.geminiModel.value)
+        // Default model should be gemini-3.8-flash
+        assertEquals("gemini-3.8-flash", repository.geminiModel.value)
+        assertEquals("gemini-3.8-flash", viewModel.geminiModel.value)
 
-        // Update to gemini-2.5-pro
-        viewModel.setGeminiModel("gemini-2.5-pro")
-        assertEquals("gemini-2.5-pro", repository.geminiModel.value)
-        assertEquals("gemini-2.5-pro", viewModel.geminiModel.value)
+        // Update to gemini-3.8-pro
+        viewModel.setGeminiModel("gemini-3.8-pro")
+        assertEquals("gemini-3.8-pro", repository.geminiModel.value)
+        assertEquals("gemini-3.8-pro", viewModel.geminiModel.value)
 
         // Update to custom model
         viewModel.setGeminiModel("gemini-2.0-flash-lite")
@@ -169,12 +169,14 @@ class ExampleRobolectricTest {
 
         // Reset with empty should fallback safely to default
         viewModel.setGeminiModel("")
-        assertEquals("gemini-2.5-flash", repository.geminiModel.value)
+        assertEquals("gemini-3.8-flash", repository.geminiModel.value)
 
         // Verify available models contains latest models
         val availableModels = com.example.lipi.engine.LipiOnlineEngine.AVAILABLE_GEMINI_MODELS
+        assertTrue(availableModels.any { it.modelId == "gemini-3.8-flash" })
+        assertTrue(availableModels.any { it.modelId == "gemini-3.8-pro" })
+        assertTrue(availableModels.any { it.modelId == "gemini-3.0-flash" })
         assertTrue(availableModels.any { it.modelId == "gemini-2.5-flash" })
-        assertTrue(availableModels.any { it.modelId == "gemini-2.5-pro" })
         assertTrue(availableModels.any { it.modelId == "gemini-2.0-flash" })
     }
 }

@@ -41,6 +41,21 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
     val onlineEngineMode: StateFlow<OnlineEngineMode> = repository.onlineEngineMode
     val geminiApiKey: StateFlow<String> = repository.geminiApiKey
     val geminiModel: StateFlow<String> = repository.geminiModel
+    val fetchedGeminiModels: StateFlow<List<com.example.lipi.engine.LipiOnlineEngine.GeminiModelInfo>> = repository.fetchedGeminiModels
+
+    private val _isFetchingGeminiModels = MutableStateFlow(false)
+    val isFetchingGeminiModels: StateFlow<Boolean> = _isFetchingGeminiModels.asStateFlow()
+
+    private val _fetchModelsFeedback = MutableStateFlow<String?>(null)
+    val fetchModelsFeedback: StateFlow<String?> = _fetchModelsFeedback.asStateFlow()
+
+    init {
+        // Automatically fetch latest models if an API key is available
+        val existingKey = repository.geminiApiKey.value
+        if (existingKey.isNotBlank()) {
+            fetchLatestGeminiModels(existingKey)
+        }
+    }
 
     private val _isOnlineTranslating = MutableStateFlow(false)
     val isOnlineTranslating: StateFlow<Boolean> = _isOnlineTranslating.asStateFlow()
@@ -100,10 +115,29 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
 
     fun setGeminiApiKey(key: String) {
         repository.setGeminiApiKey(key)
+        if (key.isNotBlank()) {
+            fetchLatestGeminiModels(key)
+        }
     }
 
     fun setGeminiModel(model: String) {
         repository.setGeminiModel(model)
+    }
+
+    fun fetchLatestGeminiModels(apiKey: String? = null) {
+        val key = apiKey ?: repository.geminiApiKey.value
+        viewModelScope.launch {
+            _isFetchingGeminiModels.value = true
+            _fetchModelsFeedback.value = "অনলাইন থেকে নতুন Gemini মডেল খোঁজা হচ্ছে..."
+            val result = com.example.lipi.engine.LipiOnlineEngine.fetchAvailableModels(key)
+            _isFetchingGeminiModels.value = false
+            result.onSuccess { models ->
+                repository.setFetchedGeminiModels(models)
+                _fetchModelsFeedback.value = "সফল! ${models.size}টি মডেল পাওয়া গেছে (সর্বাধুনিক ৩.৮ সহ)।"
+            }.onFailure { err ->
+                _fetchModelsFeedback.value = "মডেল ফেচ করা যায়নি: ${err.message ?: "ইন্টারনেট কানেকশন চেক করুন"}"
+            }
+        }
     }
 
     fun loadTrainedChatDataset(): com.example.lipi.data.ImportResult {

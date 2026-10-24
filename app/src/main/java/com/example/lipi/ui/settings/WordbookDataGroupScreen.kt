@@ -23,8 +23,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
@@ -80,7 +82,6 @@ fun WordbookDataGroupScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val scrollState = rememberScrollState()
     val customWordbook by viewModel.customWordbook.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
@@ -93,6 +94,14 @@ fun WordbookDataGroupScreen(
     var showResetConfirmDialog by remember { mutableStateOf(false) }
     var showClearConfirmDialog by remember { mutableStateOf(false) }
     var showInstructionsDialog by remember { mutableStateOf(false) }
+
+    // Filtered words memoized
+    val filteredWords = remember(searchQuery, customWordbook) {
+        if (searchQuery.isBlank()) customWordbook
+        else customWordbook.filter {
+            it.banglish.contains(searchQuery, ignoreCase = true) || it.bengali.contains(searchQuery)
+        }
+    }
 
     // File picker for import
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -118,314 +127,346 @@ fun WordbookDataGroupScreen(
         }
     }
 
-    Column(
+    LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp)
     ) {
         // Sub-screen Header with Back navigation
-        SettingsSubScreenHeader(
-            title = "কাস্টম শব্দকোষ ও ট্রেইন ডাটা",
-            subtitle = "ব্যক্তিগত ডিকশনারি, ব্যাকআপ ও ফাইল আমদানি/রপ্তানি",
-            icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-            onBack = onBack
-        )
+        item(key = "header") {
+            SettingsSubScreenHeader(
+                title = "কাস্টম শব্দকোষ ও ট্রেইন ডাটা",
+                subtitle = "ব্যক্তিগত ডিকশনারি, ব্যাকআপ ও ফাইল আমদানি/রপ্তানি",
+                icon = Icons.AutoMirrored.Filled.PlaylistAdd,
+                onBack = onBack
+            )
+        }
 
         // Summary & 1-Tap Load Training Data Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+        item(key = "management_card") {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "শব্দকোষ ব্যবস্থাপনা",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "মোট ${customWordbook.size}টি শব্দ সংরক্ষিত (অনুবাদে সর্বোচ্চ অগ্রাধিকার পাবে)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        IconButton(onClick = { showInstructionsDialog = true }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.HelpOutline,
+                                contentDescription = "ফরম্যাট নির্দেশিকা",
+                                tint = PadmaTealPrimary
+                            )
+                        }
+                    }
+
+                    // 1-Tap Load Extended Chat Training Data
+                    OutlinedButton(
+                        onClick = {
+                            val result = viewModel.loadTrainedChatDataset()
+                            Toast.makeText(
+                                context,
+                                "${result.addedCount}টি নতুন চ্যাট শব্দ (যেমন: suru→শুরু, abr→আবার, naki→নাকি ইত্যাদি) শব্দকোষে সফলভাবে যুক্ত হয়েছে!",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("load_extended_chat_data_button"),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = PadmaTealPrimary),
+                        border = BorderStroke(1.2.dp, PadmaTealPrimary.copy(alpha = 0.6f))
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp), tint = PadmaTealPrimary)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("অতিরিক্ত চ্যাট ট্রেইন ডাটা লোড করুন (১০০+ নতুন শব্দ)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    // Action Buttons Bar
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { isSingleEntryExpanded = !isSingleEntryExpanded },
+                            modifier = Modifier
+                                .weight(1.2f)
+                                .testTag("add_single_word_button"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isSingleEntryExpanded) PadmaTealPrimary else MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = if (isSingleEntryExpanded) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "নতুন শব্দ",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSingleEntryExpanded) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = { showImportDialog = true },
+                            modifier = Modifier.weight(1f).testTag("bulk_import_button"),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("ইমপোর্ট", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = { showExportDialog = true },
+                            modifier = Modifier.weight(1f).testTag("export_data_button"),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("এক্সপোর্ট", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Single Entry Input Drawer
+                    AnimatedVisibility(visible = isSingleEntryExpanded) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
+                            border = BorderStroke(1.dp, PadmaTealPrimary.copy(alpha = 0.4f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("single_data_entry_card")
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(
+                                    text = "একটি নির্দিষ্ট বাংলিশ ও তার বাংলা অনুবাদ যুক্ত করুন:",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                OutlinedTextField(
+                                    value = banglishInput,
+                                    onValueChange = { banglishInput = it },
+                                    label = { Text("বাংলিশ শব্দ / বাক্য") },
+                                    placeholder = { Text("যেমন: kemon acho") },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("single_data_entry_banglish_input"),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                OutlinedTextField(
+                                    value = bengaliInput,
+                                    onValueChange = { bengaliInput = it },
+                                    label = { Text("বাংলা অনুবাদ") },
+                                    placeholder = { Text("যেমন: কেমন আছো") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Button(
+                                    onClick = {
+                                        if (banglishInput.isNotBlank() && bengaliInput.isNotBlank()) {
+                                            viewModel.addCustomWord(banglishInput, bengaliInput)
+                                            Toast.makeText(context, "'${banglishInput.trim()}' শব্দকোষে যুক্ত হয়েছে!", Toast.LENGTH_SHORT).show()
+                                            banglishInput = ""
+                                            bengaliInput = ""
+                                            isSingleEntryExpanded = false
+                                        } else {
+                                            Toast.makeText(context, "বাংলিশ ও বাংলা উভয় ঘর পূরণ করুন", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("save_single_data_entry_button"),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("শব্দকোষে সেভ করুন", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    // Reset and Clear Options
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showResetConfirmDialog = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("ডিফল্ট রিস্টোর", fontSize = 11.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = { showClearConfirmDialog = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("সব মুছুন", fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Custom Words List with Search Header
+        item(key = "search_header") {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = "শব্দকোষ ব্যবস্থাপনা",
-                            style = MaterialTheme.typography.titleMedium,
+                            text = "সংরক্ষিত শব্দ তালিকা",
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Text(
-                            text = "মোট ${customWordbook.size}টি শব্দ সংরক্ষিত (অনুবাদে সর্বোচ্চ অগ্রাধিকার পাবে)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    IconButton(onClick = { showInstructionsDialog = true }) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.HelpOutline,
-                            contentDescription = "ফরম্যাট নির্দেশিকা",
-                            tint = PadmaTealPrimary
-                        )
-                    }
-                }
-
-                // 1-Tap Load Extended Chat Training Data
-                OutlinedButton(
-                    onClick = {
-                        val result = viewModel.loadTrainedChatDataset()
-                        Toast.makeText(
-                            context,
-                            "${result.addedCount}টি নতুন চ্যাট শব্দ (যেমন: suru→শুরু, abr→আবার, naki→নাকি ইত্যাদি) শব্দকোষে সফলভাবে যুক্ত হয়েছে!",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("load_extended_chat_data_button"),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PadmaTealPrimary),
-                    border = BorderStroke(1.2.dp, PadmaTealPrimary.copy(alpha = 0.6f))
-                ) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp), tint = PadmaTealPrimary)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("অতিরিক্ত চ্যাট ট্রেইন ডাটা লোড করুন (১০০+ নতুন শব্দ)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-
-                // Action Buttons Bar
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = { isSingleEntryExpanded = !isSingleEntryExpanded },
-                        modifier = Modifier
-                            .weight(1.2f)
-                            .testTag("add_single_word_button"),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isSingleEntryExpanded) PadmaTealPrimary else MaterialTheme.colorScheme.surfaceVariant
-                        ),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = if (isSingleEntryExpanded) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            "নতুন শব্দ",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isSingleEntryExpanded) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    OutlinedButton(
-                        onClick = { showImportDialog = true },
-                        modifier = Modifier.weight(1f).testTag("bulk_import_button"),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("ইমপোর্ট", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    OutlinedButton(
-                        onClick = { showExportDialog = true },
-                        modifier = Modifier.weight(1f).testTag("export_data_button"),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("এক্সপোর্ট", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                // Single Entry Input Drawer
-                AnimatedVisibility(visible = isSingleEntryExpanded) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
-                        border = BorderStroke(1.dp, PadmaTealPrimary.copy(alpha = 0.4f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("single_data_entry_card")
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = PadmaTealPrimary.copy(alpha = 0.15f)
+                        ) {
                             Text(
-                                text = "একটি নির্দিষ্ট বাংলিশ ও তার বাংলা অনুবাদ যুক্ত করুন:",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface
+                                text = "${filteredWords.size}টি শব্দ",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = PadmaTealPrimary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            OutlinedTextField(
-                                value = banglishInput,
-                                onValueChange = { banglishInput = it },
-                                label = { Text("বাংলিশ শব্দ / বাক্য") },
-                                placeholder = { Text("যেমন: kemon acho") },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("single_data_entry_banglish_input"),
-                                singleLine = true,
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            OutlinedTextField(
-                                value = bengaliInput,
-                                onValueChange = { bengaliInput = it },
-                                label = { Text("বাংলা অনুবাদ") },
-                                placeholder = { Text("যেমন: কেমন আছো") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            Button(
-                                onClick = {
-                                    if (banglishInput.isNotBlank() && bengaliInput.isNotBlank()) {
-                                        viewModel.addCustomWord(banglishInput, bengaliInput)
-                                        Toast.makeText(context, "'${banglishInput.trim()}' শব্দকোষে যুক্ত হয়েছে!", Toast.LENGTH_SHORT).show()
-                                        banglishInput = ""
-                                        bengaliInput = ""
-                                        isSingleEntryExpanded = false
-                                    } else {
-                                        Toast.makeText(context, "বাংলিশ ও বাংলা উভয় ঘর পূরণ করুন", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("save_single_data_entry_button"),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("শব্দকোষে সেভ করুন", fontWeight = FontWeight.Bold)
-                            }
                         }
                     }
-                }
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                // Reset and Clear Options
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = { showResetConfirmDialog = true },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("ডিফল্ট রিস্টোর", fontSize = 11.sp)
-                    }
-
-                    OutlinedButton(
-                        onClick = { showClearConfirmDialog = true },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("সব মুছুন", fontSize = 11.sp)
-                    }
-                }
-            }
-        }
-
-        // Custom Words List with Search
-        val filteredWords = remember(searchQuery, customWordbook) {
-            if (searchQuery.isBlank()) customWordbook
-            else customWordbook.filter {
-                it.banglish.contains(searchQuery, ignoreCase = true) || it.bengali.contains(searchQuery)
-            }
-        }
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Text(
-                    text = "সংরক্ষিত শব্দ তালিকা (${filteredWords.size}টি)",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("শব্দ খুঁজুন...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (searchQuery.isNotBlank()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Close, contentDescription = "মুছুন")
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                if (filteredWords.isEmpty()) {
-                    Text(
-                        text = if (searchQuery.isBlank()) "কোনো কাস্টম শব্দ যুক্ত করা হয়নি।" else "খুঁজে পাওয়া যায়নি।",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.padding(vertical = 12.dp)
-                    )
-                } else {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 380.dp)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        filteredWords.forEach { entry ->
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(text = entry.banglish, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                        Text(text = "→ ${entry.bengali}", style = MaterialTheme.typography.bodyMedium, color = PadmaTealPrimary, fontWeight = FontWeight.Bold)
-                                    }
-                                    IconButton(
-                                        onClick = {
-                                            viewModel.deleteCustomWord(entry.id)
-                                            Toast.makeText(context, "'${entry.banglish}' মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
-                                        },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(Icons.Default.Delete, contentDescription = "মুছুন", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
-                                    }
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("শব্দ খুঁজুন...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        trailingIcon = {
+                            if (searchQuery.isNotBlank()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = "মুছুন")
                                 }
                             }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = true
+                    )
+                }
+            }
+        }
+
+        if (filteredWords.isEmpty()) {
+            item(key = "empty_words_notice") {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = if (searchQuery.isBlank()) "কোনো কাস্টম শব্দ যুক্ত করা হয়নি।" else "খুঁজে পাওয়া যায়নি।",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
+        } else {
+            items(
+                items = filteredWords,
+                key = { it.id }
+            ) { entry ->
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = entry.banglish,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "→ ${entry.bengali}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = PadmaTealPrimary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                viewModel.deleteCustomWord(entry.id)
+                                Toast.makeText(context, "'${entry.banglish}' মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "মুছুন",
+                                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
                 }

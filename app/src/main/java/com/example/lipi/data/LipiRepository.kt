@@ -59,9 +59,14 @@ class LipiRepository(private val context: Context) {
     val geminiApiKey: StateFlow<String> = _geminiApiKey.asStateFlow()
 
     private val _geminiModel = MutableStateFlow(
-        prefs.getString("custom_gemini_model", "gemini-2.5-flash") ?: "gemini-2.5-flash"
+        prefs.getString("custom_gemini_model", "gemini-3.8-flash") ?: "gemini-3.8-flash"
     )
     val geminiModel: StateFlow<String> = _geminiModel.asStateFlow()
+
+    private val _fetchedGeminiModels = MutableStateFlow<List<com.example.lipi.engine.LipiOnlineEngine.GeminiModelInfo>>(
+        loadCachedGeminiModels()
+    )
+    val fetchedGeminiModels: StateFlow<List<com.example.lipi.engine.LipiOnlineEngine.GeminiModelInfo>> = _fetchedGeminiModels.asStateFlow()
 
     private val _customWordbook = MutableStateFlow<List<WordbookEntry>>(loadCustomWordbook())
     val customWordbook: StateFlow<List<WordbookEntry>> = _customWordbook.asStateFlow()
@@ -80,9 +85,52 @@ class LipiRepository(private val context: Context) {
     }
 
     fun setGeminiModel(model: String) {
-        val cleanModel = model.trim().ifEmpty { "gemini-2.5-flash" }
+        val cleanModel = model.trim().ifEmpty { "gemini-3.8-flash" }
         prefs.edit().putString("custom_gemini_model", cleanModel).apply()
         _geminiModel.value = cleanModel
+    }
+
+    fun setFetchedGeminiModels(models: List<com.example.lipi.engine.LipiOnlineEngine.GeminiModelInfo>) {
+        _fetchedGeminiModels.value = models
+        try {
+            val jsonArray = JSONArray()
+            for (m in models) {
+                val obj = JSONObject().apply {
+                    put("modelId", m.modelId)
+                    put("displayName", m.displayName)
+                    put("badge", m.badge)
+                    put("description", m.description)
+                    put("isRecommended", m.isRecommended)
+                    put("isLiveFetched", m.isLiveFetched)
+                }
+                jsonArray.put(obj)
+            }
+            prefs.edit().putString("cached_gemini_models_json", jsonArray.toString()).apply()
+        } catch (_: Exception) {}
+    }
+
+    private fun loadCachedGeminiModels(): List<com.example.lipi.engine.LipiOnlineEngine.GeminiModelInfo> {
+        val saved = prefs.getString("cached_gemini_models_json", null) ?: return emptyList()
+        return try {
+            val jsonArray = JSONArray(saved)
+            val list = mutableListOf<com.example.lipi.engine.LipiOnlineEngine.GeminiModelInfo>()
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                list.add(
+                    com.example.lipi.engine.LipiOnlineEngine.GeminiModelInfo(
+                        modelId = obj.getString("modelId"),
+                        displayName = obj.getString("displayName"),
+                        badge = obj.optString("badge", "অনলাইন"),
+                        description = obj.optString("description", ""),
+                        isRecommended = obj.optBoolean("isRecommended", false),
+                        isLiveFetched = obj.optBoolean("isLiveFetched", true)
+                    )
+                )
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     fun setPersistentNotificationEnabled(enabled: Boolean) {
