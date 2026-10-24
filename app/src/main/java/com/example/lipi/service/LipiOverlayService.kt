@@ -42,6 +42,15 @@ import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.R
 import com.example.lipi.engine.MixedScriptTokenizer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import com.example.lipi.engine.LipiOnlineEngine
+import com.example.lipi.data.OnlineEngineMode
+import com.example.lipi.data.LipiMode
 
 /**
  * Native Android Floating Overlay Assistant Service.
@@ -57,6 +66,7 @@ class LipiOverlayService : Service() {
         const val ACTION_START_ASSISTANT = "com.example.lipi.action.START_ASSISTANT"
         const val ACTION_SHOW_BADGE = "com.example.lipi.action.SHOW_BADGE"
         const val ACTION_DISMISS = "com.example.lipi.action.DISMISS"
+        const val ACTION_KILL_SERVICE = "com.example.lipi.action.KILL_SERVICE"
         const val ACTION_OPEN_POPUP = "com.example.lipi.action.OPEN_POPUP"
         const val ACTION_TOGGLE_BADGE = "com.example.lipi.action.TOGGLE_BADGE"
         const val ACTION_UPDATE_NOTIFICATION = "com.example.lipi.action.UPDATE_NOTIFICATION"
@@ -79,6 +89,18 @@ class LipiOverlayService : Service() {
 
     private var activeInputField: EditText? = null
     private var activeTranslationText: TextView? = null
+
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var currentTransliterationJob: Job? = null
+    private var isServiceKilled: Boolean = false
+
+    private var lastAppLogicResult: String = ""
+    private var lastGeminiResult: String = ""
+    private var currentDisplaySource: String = "logic" // "gemini" or "logic"
+
+    private var outputStatusLabelView: TextView? = null
+    private var aiFeedbackLabelView: TextView? = null
+    private var aiSwitchBtnView: TextView? = null
 
     private var currentText: String = ""
     private var convertedBengali: String = ""
@@ -118,13 +140,13 @@ class LipiOverlayService : Service() {
             // Satisfy Android 8+ foreground service requirements immediately if notification is enabled
             val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
             val isNotificationEnabled = prefs.getBoolean("persistent_notification_enabled", true)
-            if (isNotificationEnabled && intent?.action != ACTION_DISMISS) {
+            if (isNotificationEnabled && intent?.action != ACTION_DISMISS && intent?.action != ACTION_KILL_SERVICE) {
                 updatePersistentNotification()
             }
 
             if (!Settings.canDrawOverlays(this)) {
                 dismissAllOverlays()
-                if (intent?.action == ACTION_DISMISS) {
+                if (intent?.action == ACTION_DISMISS || intent?.action == ACTION_KILL_SERVICE) {
                     stopSelf()
                     return START_NOT_STICKY
                 }
@@ -135,7 +157,8 @@ class LipiOverlayService : Service() {
             }
 
             when (intent?.action) {
-                ACTION_DISMISS -> {
+                ACTION_KILL_SERVICE, ACTION_DISMISS -> {
+                    isServiceKilled = true
                     dismissAllOverlays()
                     try {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -146,6 +169,7 @@ class LipiOverlayService : Service() {
                         }
                     } catch (_: Exception) {}
                     cancelPersistentNotification()
+                    Toast.makeText(this, "লিপি ব্যাকগ্রাউন্ড সার্ভিস ও নোটিফিকেশন বন্ধ করা হয়েছে", Toast.LENGTH_SHORT).show()
                     stopSelf()
                     return START_NOT_STICKY
                 }
@@ -169,6 +193,7 @@ class LipiOverlayService : Service() {
                             isReverseMode = false
                         }
                         convertedBengali = processText(clipText)
+                        lastAppLogicResult = convertedBengali
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -895,6 +920,124 @@ class LipiOverlayService : Service() {
         }
     }
 
+    private fun getOnlineEngineMode(): OnlineEngineMode {
+        val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
+        val modeStr = prefs.getString("online_engine_mode", OnlineEngineMode.OFFLINE_ONLY.name)
+        return try {
+            OnlineEngineMode.valueOf(modeStr ?: OnlineEngineMode.OFFLINE_ONLY.name)
+        } catch (_: Exception) {
+            OnlineEngineMode.OFFLINE_ONLY
+        }
+    }
+
+    private fun getGeminiApiKey(): String {
+        val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
+        return prefs.getString("custom_gemini_api_key", "") ?: ""
+    }
+
+    private fun getGeminiModel(): String {
+        val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
+        return prefs.getString("custom_gemini_model", "gemini-3.8-flash") ?: "gemini-3.8-flash"
+    }
+
+    private fun triggerGeminiTransliteration(
+        inputText: String,
+        force: Boolean = false,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
+        val trimmed = inputText.trim()
+        if (trimmed.isBlank()) {
+            outputStatusLabelView?.text = if (isReverseMode) "লিপি: বাংলিশ ফলাফল" else "লিপি: বাংলা ফলাফল"
+            aiFeedbackLabelView?.visibility = View.GONE
+            return
+        }
+
+        val engineMode = getOnlineEngineMode()
+        if (!force && engineMode == OnlineEngineMode.OFFLINE_ONLY) {
+            outputStatusLabelView?.text = "📱 অ্যাপ লজিক ফলাফল"
+            aiFeedbackLabelView?.visibility = View.GONE
+            return
+        }
+
+        currentTransliterationJob?.cancel()
+        outputStatusLabelView?.text = "⏳ Gemini AI রূপান্তর আনা হচ্ছে..."
+        outputStatusLabelView?.setTextColor(0xFFFFD54F.toInt())
+        aiFeedbackLabelView?.visibility = View.VISIBLE
+        aiFeedbackLabelView?.text = "Gemini ক্লাউড মডেল অনুসন্ধান করা হচ্ছে..."
+        aiFeedbackLabelView?.setTextColor(0xFF8BA2A8.toInt())
+
+        val targetMode = if (isReverseMode) LipiMode.BENGALI_TO_BANGLISH else LipiMode.BANGLISH_TO_BENGALI
+        val customKey = getGeminiApiKey()
+        val model = getGeminiModel()
+        val convertDigits = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE).getBoolean("convert_digits", false)
+        val style = getTransliterationStyle()
+
+        currentTransliterationJob = serviceScope.launch {
+            try {
+                val smartResult = LipiOnlineEngine.transliterateSmart(
+                    inputText = trimmed,
+                    mode = targetMode,
+                    enginePreference = if (force) OnlineEngineMode.GEMINI_AI else engineMode,
+                    customGeminiApiKey = customKey,
+                    geminiModel = model,
+                    convertDigitsToBengali = convertDigits,
+                    transliterationStyle = style
+                )
+
+                if (activeTranslationText != null) {
+                    if (smartResult.engineUsed == OnlineEngineMode.GEMINI_AI && !smartResult.isFallbackToOffline) {
+                        lastGeminiResult = smartResult.convertedText
+                        convertedBengali = smartResult.convertedText
+                        currentDisplaySource = "gemini"
+                        activeTranslationText?.text = smartResult.convertedText
+                        val shortModel = model.replace("gemini-", "")
+                        outputStatusLabelView?.text = "✨ Gemini AI ($shortModel) ফলাফল"
+                        outputStatusLabelView?.setTextColor(0xFF57DFCE.toInt())
+                        aiFeedbackLabelView?.visibility = View.VISIBLE
+                        aiFeedbackLabelView?.text = "✓ Gemini AI দ্বারা কনটেক্সট-সচেতন শুদ্ধ রূপান্তর"
+                        aiFeedbackLabelView?.setTextColor(0xFF81C784.toInt())
+                        aiSwitchBtnView?.visibility = View.VISIBLE
+                        aiSwitchBtnView?.text = "লজিক দেখুন"
+                        onComplete?.invoke(true)
+                    } else if (smartResult.isFallbackToOffline) {
+                        lastAppLogicResult = smartResult.convertedText
+                        convertedBengali = smartResult.convertedText
+                        currentDisplaySource = "logic"
+                        activeTranslationText?.text = smartResult.convertedText
+                        outputStatusLabelView?.text = "📱 অ্যাপ লজিক ফলাফল"
+                        outputStatusLabelView?.setTextColor(0xFF8BA2A8.toInt())
+                        aiFeedbackLabelView?.visibility = View.VISIBLE
+                        val msg = smartResult.feedbackMessage ?: "এআই সাড়া দেয়নি (অফলাইন লজিক দেখানো হচ্ছে)"
+                        aiFeedbackLabelView?.text = "⚠️ $msg"
+                        aiFeedbackLabelView?.setTextColor(0xFFFFB74D.toInt())
+                        aiSwitchBtnView?.visibility = View.GONE
+                        onComplete?.invoke(false)
+                    } else {
+                        convertedBengali = smartResult.convertedText
+                        activeTranslationText?.text = smartResult.convertedText
+                        outputStatusLabelView?.text = if (smartResult.engineUsed == OnlineEngineMode.ONLINE_CLOUD)
+                            "☁️ Google ক্লাউড ফলাফল"
+                        else
+                            "📱 অ্যাপ লজিক ফলাফল"
+                        outputStatusLabelView?.setTextColor(0xFF57DFCE.toInt())
+                        aiFeedbackLabelView?.visibility = View.GONE
+                        aiSwitchBtnView?.visibility = View.GONE
+                        onComplete?.invoke(true)
+                    }
+                }
+            } catch (e: Exception) {
+                if (activeTranslationText != null) {
+                    outputStatusLabelView?.text = "📱 অ্যাপ লজিক ফলাফল"
+                    outputStatusLabelView?.setTextColor(0xFF8BA2A8.toInt())
+                    aiFeedbackLabelView?.visibility = View.VISIBLE
+                    aiFeedbackLabelView?.text = "⚠️ ত্রুটি: ${e.message?.take(50) ?: "কানেকশন ব্যাহত"}"
+                    aiFeedbackLabelView?.setTextColor(0xFFFFB74D.toInt())
+                }
+                onComplete?.invoke(false)
+            }
+        }
+    }
+
     private fun processText(text: String): String {
         val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
         val convertDigits = prefs.getBoolean("convert_digits", false)
@@ -922,6 +1065,7 @@ class LipiOverlayService : Service() {
                     isReverseMode = false
                 }
                 convertedBengali = processText(clipText)
+                lastAppLogicResult = convertedBengali
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -1010,6 +1154,33 @@ class LipiOverlayService : Service() {
             setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
 
+        // Engine indicator badge in header (shows active engine)
+        val engineBadge = TextView(this).apply {
+            val currentMode = getOnlineEngineMode()
+            text = when (currentMode) {
+                OnlineEngineMode.GEMINI_AI -> "✨ Gemini AI"
+                OnlineEngineMode.ONLINE_CLOUD -> "☁️ ক্লাউড"
+                else -> "📱 অফলাইন"
+            }
+            setTextColor(if (currentMode == OnlineEngineMode.GEMINI_AI) 0xFF57DFCE.toInt() else 0xFF8BA2A8.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            setPadding(8, 2, 8, 2)
+            background = GradientDrawable().apply {
+                cornerRadius = 8f
+                setColor(if (currentMode == OnlineEngineMode.GEMINI_AI) 0x3300A896.toInt() else 0x22FFFFFF)
+                if (currentMode == OnlineEngineMode.GEMINI_AI) {
+                    setStroke(1, 0xFF00A896.toInt())
+                }
+            }
+            val p = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 0, 8, 0)
+            }
+            layoutParams = p
+        }
+
         val closeBtn = TextView(this).apply {
             text = "✕"
             setTextColor(Color.WHITE)
@@ -1024,6 +1195,7 @@ class LipiOverlayService : Service() {
         }
 
         headerRow.addView(title)
+        headerRow.addView(engineBadge)
         headerRow.addView(closeBtn)
 
         // Editable Input Field for writing or pasting (compact height)
@@ -1051,13 +1223,58 @@ class LipiOverlayService : Service() {
         }
         activeInputField = inputField
 
+        // Status Row for showing result source (Gemini AI vs Local Logic) with toggle
+        val statusRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 6, 0, 2)
+            }
+            layoutParams = params
+        }
+
+        val outputStatusLabel = TextView(this).apply {
+            val mode = getOnlineEngineMode()
+            text = when {
+                mode == OnlineEngineMode.GEMINI_AI -> "✨ Gemini AI রূপান্তর"
+                mode == OnlineEngineMode.ONLINE_CLOUD -> "☁️ Google ক্লাউড রূপান্তর"
+                else -> "📱 অ্যাপ লজিক রূপান্তর"
+            }
+            setTextColor(0xFF57DFCE.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        outputStatusLabelView = outputStatusLabel
+
+        val aiSwitchBtn = TextView(this).apply {
+            text = "লজিক দেখুন"
+            setTextColor(0xFF8BA2A8.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            visibility = View.GONE
+            setPadding(8, 2, 8, 2)
+            background = GradientDrawable().apply {
+                cornerRadius = 6f
+                setColor(0x20FFFFFF)
+            }
+        }
+        aiSwitchBtnView = aiSwitchBtn
+
+        statusRow.addView(outputStatusLabel)
+        statusRow.addView(aiSwitchBtn)
+
         // Live Translated Output Display in a sleek highlighted box
         val translationText = TextView(this).apply {
             text = if (convertedBengali.isNotBlank())
                 convertedBengali
-            else if (currentText.isNotBlank())
-                processText(currentText)
-            else if (isReverseMode)
+            else if (currentText.isNotBlank()) {
+                val logicRes = processText(currentText)
+                lastAppLogicResult = logicRes
+                logicRes
+            } else if (isReverseMode)
                 "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..."
             else
                 "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
@@ -1074,11 +1291,43 @@ class LipiOverlayService : Service() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, 6, 0, 8)
+                setMargins(0, 4, 0, 4)
             }
             layoutParams = params
         }
         activeTranslationText = translationText
+
+        aiSwitchBtn.setOnClickListener {
+            if (currentDisplaySource == "gemini") {
+                if (lastAppLogicResult.isNotBlank()) {
+                    currentDisplaySource = "logic"
+                    translationText.text = lastAppLogicResult
+                    aiSwitchBtn.text = "এআই দেখুন"
+                    outputStatusLabel.text = "📱 অ্যাপ লজিক ফলাফল"
+                    outputStatusLabel.setTextColor(0xFF8BA2A8.toInt())
+                }
+            } else {
+                if (lastGeminiResult.isNotBlank()) {
+                    currentDisplaySource = "gemini"
+                    translationText.text = lastGeminiResult
+                    aiSwitchBtn.text = "লজিক দেখুন"
+                    val shortModel = getGeminiModel().replace("gemini-", "")
+                    outputStatusLabel.text = "✨ Gemini AI ($shortModel) ফলাফল"
+                    outputStatusLabel.setTextColor(0xFF57DFCE.toInt())
+                }
+            }
+        }
+
+        // Subtitle / Feedback label for AI model info or network status
+        val aiFeedbackLabel = TextView(this).apply {
+            val mode = getOnlineEngineMode()
+            text = if (mode == OnlineEngineMode.GEMINI_AI) "Gemini AI স্মার্ট ইঞ্জিন প্রস্তুত" else ""
+            setTextColor(0xFF8BA2A8.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            visibility = if (mode == OnlineEngineMode.GEMINI_AI) View.VISIBLE else View.GONE
+            setPadding(2, 0, 2, 6)
+        }
+        aiFeedbackLabelView = aiFeedbackLabel
 
         // Modern Segmented Mode Toggle Button: [ বাংলিশ → বাংলা | বাংলা → বাংলিশ ]
         val toggleBar = LinearLayout(this).apply {
@@ -1162,8 +1411,14 @@ class LipiOverlayService : Service() {
                     inputField.setText(prevOutput)
                     currentText = prevOutput
                 }
-                convertedBengali = processText(inputField.text.toString())
+                val inText = inputField.text.toString()
+                convertedBengali = processText(inText)
+                lastAppLogicResult = convertedBengali
                 translationText.text = if (convertedBengali.isNotBlank()) convertedBengali else "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
+                outputStatusLabel.text = "📱 অ্যাপ লজিক ফলাফল"
+                if (getOnlineEngineMode() == OnlineEngineMode.GEMINI_AI && inText.isNotBlank()) {
+                    triggerGeminiTransliteration(inText, force = false)
+                }
             }
         }
 
@@ -1176,31 +1431,62 @@ class LipiOverlayService : Service() {
                     inputField.setText(prevOutput)
                     currentText = prevOutput
                 }
-                convertedBengali = processText(inputField.text.toString())
+                val inText = inputField.text.toString()
+                convertedBengali = processText(inText)
+                lastAppLogicResult = convertedBengali
                 translationText.text = if (convertedBengali.isNotBlank()) convertedBengali else "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..."
+                outputStatusLabel.text = "📱 অ্যাপ লজিক ফলাফল"
+                if (getOnlineEngineMode() == OnlineEngineMode.GEMINI_AI && inText.isNotBlank()) {
+                    triggerGeminiTransliteration(inText, force = false)
+                }
             }
         }
 
         toggleBar.addView(btnBanglishToBengali)
         toggleBar.addView(btnBengaliToBanglish)
 
-        // Real-time transliteration as user types with lightweight 40ms debouncer
+        // Real-time transliteration as user types with immediate logic + debounced Gemini AI
         var liveTypingRunnable: Runnable? = null
+        var debouncedAiRunnable: Runnable? = null
         inputField.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 val input = s?.toString() ?: ""
                 currentText = input
                 liveTypingRunnable?.let { mainHandler.removeCallbacks(it) }
+                debouncedAiRunnable?.let { mainHandler.removeCallbacks(it) }
+
                 if (input.isNotBlank()) {
+                    // 1. Instant local offline logic execution (0ms delay)
                     liveTypingRunnable = Runnable {
-                        convertedBengali = processText(input)
-                        translationText.text = convertedBengali
+                        val logicRes = processText(input)
+                        lastAppLogicResult = logicRes
+                        convertedBengali = logicRes
+                        currentDisplaySource = "logic"
+                        translationText.text = logicRes
+                        outputStatusLabel.text = "📱 অ্যাপ লজিক ফলাফল"
+                        outputStatusLabel.setTextColor(0xFF8BA2A8.toInt())
+                        aiSwitchBtn.visibility = View.GONE
                     }
-                    mainHandler.postDelayed(liveTypingRunnable!!, 40)
+                    mainHandler.postDelayed(liveTypingRunnable!!, 35)
+
+                    // 2. Debounced auto-fetch from Gemini AI if selected in Settings
+                    if (getOnlineEngineMode() == OnlineEngineMode.GEMINI_AI) {
+                        debouncedAiRunnable = Runnable {
+                            triggerGeminiTransliteration(input, force = false)
+                        }
+                        mainHandler.postDelayed(debouncedAiRunnable!!, 450)
+                    }
                 } else {
                     convertedBengali = ""
+                    lastAppLogicResult = ""
+                    lastGeminiResult = ""
+                    currentTransliterationJob?.cancel()
                     translationText.text = if (isReverseMode) "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..." else "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
+                    outputStatusLabel.text = if (isReverseMode) "লিপি: বাংলা → বাংলিশ" else "লিপি: বাংলিশ → বাংলা"
+                    outputStatusLabel.setTextColor(0xFF57DFCE.toInt())
+                    aiFeedbackLabel.visibility = View.GONE
+                    aiSwitchBtn.visibility = View.GONE
                 }
             }
             override fun afterTextChanged(s: Editable?) {}
@@ -1213,25 +1499,25 @@ class LipiOverlayService : Service() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, 2, 0, 0)
+                setMargins(0, 4, 0, 0)
             }
             layoutParams = params
         }
 
         val btnHeight = (36 * displayMetrics.density).toInt()
 
-        // 1. Paste Button ("পেস্ট করুন")
+        // 1. Paste Button ("পেস্ট")
         val pasteBtn = Button(this).apply {
-            text = "পেস্ট করুন"
+            text = "পেস্ট"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setTextColor(Color.WHITE)
-            setPadding(4, 0, 4, 0)
+            setPadding(2, 0, 2, 0)
             background = GradientDrawable().apply {
                 cornerRadius = 10f
                 setColor(0xFF0F5161.toInt()) // Deep teal
             }
             val p = LinearLayout.LayoutParams(0, btnHeight, 1f).apply {
-                setMargins(0, 0, 3, 0)
+                setMargins(0, 0, 2, 0)
             }
             layoutParams = p
             setOnClickListener {
@@ -1246,15 +1532,27 @@ class LipiOverlayService : Service() {
                 if (!clipText.isNullOrBlank()) {
                     inputField.setText(clipText)
                     currentText = clipText
-                    convertedBengali = processText(clipText)
-                    translationText.text = convertedBengali
-                    Toast.makeText(this@LipiOverlayService, "লেখা পেস্ট ও রূপান্তর হয়েছে!", Toast.LENGTH_SHORT).show()
+                    val logicRes = processText(clipText)
+                    lastAppLogicResult = logicRes
+                    convertedBengali = logicRes
+                    translationText.text = logicRes
+                    outputStatusLabel.text = "📱 অ্যাপ লজিক ফলাফল"
+                    Toast.makeText(this@LipiOverlayService, "লেখা পেস্ট হয়েছে!", Toast.LENGTH_SHORT).show()
+                    if (getOnlineEngineMode() == OnlineEngineMode.GEMINI_AI) {
+                        triggerGeminiTransliteration(clipText, force = false)
+                    }
                 } else {
                     val typed = inputField.text.toString()
                     if (typed.isNotBlank()) {
-                        convertedBengali = processText(typed)
-                        translationText.text = convertedBengali
+                        val logicRes = processText(typed)
+                        lastAppLogicResult = logicRes
+                        convertedBengali = logicRes
+                        translationText.text = logicRes
+                        outputStatusLabel.text = "📱 অ্যাপ লজিক ফলাফল"
                         Toast.makeText(this@LipiOverlayService, "রূপান্তর সম্পন্ন হয়েছে!", Toast.LENGTH_SHORT).show()
+                        if (getOnlineEngineMode() == OnlineEngineMode.GEMINI_AI) {
+                            triggerGeminiTransliteration(typed, force = false)
+                        }
                     } else {
                         Toast.makeText(this@LipiOverlayService, "ক্লিপবোর্ডে কোনো লেখা পাওয়া যায়নি।", Toast.LENGTH_LONG).show()
                     }
@@ -1267,40 +1565,73 @@ class LipiOverlayService : Service() {
             text = "মুছুন"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setTextColor(0xFFFFCDD2.toInt())
-            setPadding(4, 0, 4, 0)
+            setPadding(2, 0, 2, 0)
             background = GradientDrawable().apply {
                 cornerRadius = 10f
                 setColor(0xFF2E383D.toInt()) // Slate dark
                 setStroke(1, 0xFF4F5D65.toInt())
             }
             val p = LinearLayout.LayoutParams(0, btnHeight, 1f).apply {
-                setMargins(3, 0, 3, 0)
+                setMargins(2, 0, 2, 0)
             }
             layoutParams = p
             setOnClickListener {
+                currentTransliterationJob?.cancel()
                 inputField.setText("")
                 currentText = ""
                 convertedBengali = ""
+                lastAppLogicResult = ""
+                lastGeminiResult = ""
                 translationText.text = if (isReverseMode)
                     "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..."
                 else
                     "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
+                outputStatusLabel.text = if (isReverseMode) "লিপি: বাংলা → বাংলিশ" else "লিপি: বাংলিশ → বাংলা"
+                outputStatusLabel.setTextColor(0xFF57DFCE.toInt())
+                aiFeedbackLabel.visibility = View.GONE
+                aiSwitchBtn.visibility = View.GONE
                 Toast.makeText(this@LipiOverlayService, "লেখা মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
             }
         }
 
-        // 3. Copy Button ("কপি করুন")
-        val copyBtn = Button(this).apply {
-            text = "কপি করুন"
+        // 3. AI Refine Button ("✨ এআই")
+        val aiRefineBtn = Button(this).apply {
+            text = "✨ এআই"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setTextColor(Color.WHITE)
-            setPadding(4, 0, 4, 0)
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setPadding(2, 0, 2, 0)
+            background = GradientDrawable().apply {
+                cornerRadius = 10f
+                setColor(0xFF1E3A40.toInt())
+                setStroke(2, 0xFF57DFCE.toInt())
+            }
+            val p = LinearLayout.LayoutParams(0, btnHeight, 1.15f).apply {
+                setMargins(2, 0, 2, 0)
+            }
+            layoutParams = p
+            setOnClickListener {
+                val textToProcess = inputField.text.toString().ifBlank { currentText }
+                if (textToProcess.isNotBlank()) {
+                    triggerGeminiTransliteration(textToProcess, force = true)
+                } else {
+                    Toast.makeText(this@LipiOverlayService, "রূপান্তরের জন্য লেখা লিখুন বা পেস্ট করুন", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        // 4. Copy Button ("কপি")
+        val copyBtn = Button(this).apply {
+            text = "কপি"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextColor(Color.WHITE)
+            setPadding(2, 0, 2, 0)
             background = GradientDrawable().apply {
                 cornerRadius = 10f
                 setColor(0xFFD86B43.toInt()) // Terracotta
             }
             val p = LinearLayout.LayoutParams(0, btnHeight, 1f).apply {
-                setMargins(3, 0, 0, 0)
+                setMargins(2, 0, 0, 0)
             }
             layoutParams = p
             setOnClickListener {
@@ -1330,12 +1661,15 @@ class LipiOverlayService : Service() {
 
         actionRow.addView(pasteBtn)
         actionRow.addView(clearBtn)
+        actionRow.addView(aiRefineBtn)
         actionRow.addView(copyBtn)
 
         container.addView(headerRow)
         container.addView(toggleBar)
         container.addView(inputField)
+        container.addView(statusRow)
         container.addView(translationText)
+        container.addView(aiFeedbackLabel)
         container.addView(actionRow)
 
         rootOverlay.addView(container)
@@ -1345,6 +1679,11 @@ class LipiOverlayService : Service() {
             windowManager?.addView(translationPopupView, windowLayoutParams)
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+
+        // If opened with pre-existing text or auto-paste, trigger Gemini AI if enabled
+        if (currentText.isNotBlank() && getOnlineEngineMode() == OnlineEngineMode.GEMINI_AI) {
+            triggerGeminiTransliteration(currentText, force = false)
         }
 
         if (autoPasteFromClipboard) {
@@ -1375,13 +1714,16 @@ class LipiOverlayService : Service() {
                             } catch (e: Exception) {
                                 e.printStackTrace()
                             }
-                            convertedBengali = processText(clipText)
-                            translationText.text = if (convertedBengali.isNotBlank())
-                                convertedBengali
-                            else if (isReverseMode)
-                                "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..."
-                            else
-                                "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
+                            val logicRes = processText(clipText)
+                            lastAppLogicResult = logicRes
+                            convertedBengali = logicRes
+                            translationText.text = logicRes
+                            outputStatusLabel.text = "📱 অ্যাপ লজিক ফলাফল"
+
+                            if (getOnlineEngineMode() == OnlineEngineMode.GEMINI_AI) {
+                                triggerGeminiTransliteration(clipText, force = false)
+                            }
+
                             if (!toastShown) {
                                 Toast.makeText(this@LipiOverlayService, "✓ ক্লিপবোর্ড থেকে স্বয়ংক্রিয় পেস্ট সম্পন্ন!", Toast.LENGTH_SHORT).show()
                             }
@@ -1395,8 +1737,12 @@ class LipiOverlayService : Service() {
     }
 
     private fun dismissTranslationPopup() {
+        currentTransliterationJob?.cancel()
         activeInputField = null
         activeTranslationText = null
+        outputStatusLabelView = null
+        aiFeedbackLabelView = null
+        aiSwitchBtnView = null
         if (translationPopupView != null) {
             try {
                 windowManager?.removeView(translationPopupView)
@@ -1497,6 +1843,17 @@ class LipiOverlayService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        // 4. PendingIntent to kill the persistent notification and service completely
+        val killServiceIntent = Intent(this, LipiOverlayService::class.java).apply {
+            action = ACTION_KILL_SERVICE
+        }
+        val killServicePendingIntent = PendingIntent.getService(
+            this,
+            104,
+            killServiceIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val isBadgeShowing = floatingBadgeView != null && floatingBadgeView?.visibility == View.VISIBLE
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
@@ -1522,6 +1879,11 @@ class LipiOverlayService : Service() {
                 android.R.drawable.ic_menu_compass,
                 if (isBadgeShowing) "বল লুকান" else "বল দেখান",
                 toggleBadgePendingIntent
+            )
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "কিল করুন",
+                killServicePendingIntent
             )
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -1568,6 +1930,7 @@ class LipiOverlayService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
+        if (isServiceKilled) return
         // Keep foreground service and notification active if enabled
         val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
         val isNotificationEnabled = prefs.getBoolean("persistent_notification_enabled", true)
@@ -1579,6 +1942,7 @@ class LipiOverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        serviceScope.cancel()
         try {
             clipboardManager?.removePrimaryClipChangedListener(clipboardListener)
         } catch (e: Exception) {

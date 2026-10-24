@@ -326,7 +326,8 @@ object LipiOnlineEngine {
         inputText: String,
         provider: Provider = Provider.GOOGLE_INPUT_TOOLS,
         customGeminiApiKey: String = "",
-        geminiModel: String = "gemini-2.5-flash"
+        geminiModel: String = "gemini-2.5-flash",
+        mode: LipiMode = LipiMode.BANGLISH_TO_BENGALI
     ): Result<String> = withContext(Dispatchers.IO) {
         val trimmed = inputText.trim()
         if (trimmed.isEmpty()) return@withContext Result.success(inputText)
@@ -334,7 +335,7 @@ object LipiOnlineEngine {
         try {
             when (provider) {
                 Provider.GOOGLE_INPUT_TOOLS -> transliterateWithGoogleInputTools(trimmed)
-                Provider.GEMINI_AI -> transliterateWithGemini(trimmed, customGeminiApiKey, geminiModel)
+                Provider.GEMINI_AI -> transliterateWithGemini(trimmed, customGeminiApiKey, geminiModel, mode)
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -400,7 +401,8 @@ object LipiOnlineEngine {
                     inputText = trimmed,
                     provider = Provider.GEMINI_AI,
                     customGeminiApiKey = customGeminiApiKey,
-                    geminiModel = geminiModel
+                    geminiModel = geminiModel,
+                    mode = mode
                 )
                 if (geminiRes.isSuccess) {
                     SmartTransliterationResult(
@@ -413,12 +415,13 @@ object LipiOnlineEngine {
                 } else {
                     // Seamless fallback to offline dictionary and phonetic engine
                     val offlineText = runOffline()
+                    val errorDetail = geminiRes.exceptionOrNull()?.message ?: "ইন্টারনেট/এআই সংযোগ পাওয়া যায়নি"
                     SmartTransliterationResult(
                         originalText = trimmed,
                         convertedText = offlineText,
                         engineUsed = OnlineEngineMode.OFFLINE_ONLY,
                         isFallbackToOffline = true,
-                        feedbackMessage = "ইন্টারনেট/এআই সংযোগ না থাকায় অফলাইন ডেটাবেস দিয়ে রূপান্তর সম্পন্ন হয়েছে।"
+                        feedbackMessage = "অফলাইন লজিক ব্যবহৃত ($errorDetail)"
                     )
                 }
             }
@@ -592,7 +595,8 @@ object LipiOnlineEngine {
     private fun executeSingleGeminiCall(
         text: String,
         effectiveApiKey: String,
-        model: String
+        model: String,
+        mode: LipiMode = LipiMode.BANGLISH_TO_BENGALI
     ): GeminiExecutionResult {
         return try {
             val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$effectiveApiKey"
@@ -604,10 +608,16 @@ object LipiOnlineEngine {
             connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
             connection.doOutput = true
 
-            val systemInstruction = "You are Lipi, an expert Banglish to Bengali transliteration engine. " +
-                    "Convert the following casual Banglish text into authentic, natural conversational Bengali script. " +
-                    "Fix common phonetic typing mistakes and slang (e.g., 'suru' -> 'শুরু', 'naki' -> 'নাকি', 'abr' -> 'আবার', 'korli' -> 'করলি'). " +
-                    "Preserve emojis, punctuation, and question marks exactly. Output ONLY the converted Bengali text with no explanations or preamble."
+            val systemInstruction = if (mode == LipiMode.BENGALI_TO_BANGLISH) {
+                "You are Lipi, an expert Bengali to Romanized Banglish transliteration engine. " +
+                        "Convert the following Bengali text into clean, casual, natural phonetic Banglish script as commonly typed in chat messages (e.g., 'শুরু' -> 'suru', 'নাকি' -> 'naki', 'আবার' -> 'abar', 'করলি' -> 'korli'). " +
+                        "Preserve emojis, punctuation, and question marks exactly. Output ONLY the converted Banglish text with no explanations or preamble."
+            } else {
+                "You are Lipi, an expert Banglish to Bengali transliteration engine. " +
+                        "Convert the following casual Banglish text into authentic, natural conversational Bengali script. " +
+                        "Fix common phonetic typing mistakes and slang (e.g., 'suru' -> 'শুরু', 'naki' -> 'নাকি', 'abr' -> 'আবার', 'korli' -> 'করলি'). " +
+                        "Preserve emojis, punctuation, and question marks exactly. Output ONLY the converted Bengali text with no explanations or preamble."
+            }
 
             val jsonBody = JSONObject().apply {
                 val contents = JSONArray().apply {
@@ -700,7 +710,8 @@ object LipiOnlineEngine {
     private fun transliterateWithGemini(
         text: String,
         customApiKey: String,
-        model: String = "gemini-3.8-flash"
+        model: String = "gemini-3.8-flash",
+        mode: LipiMode = LipiMode.BANGLISH_TO_BENGALI
     ): Result<String> {
         val effectiveApiKey = when {
             customApiKey.isNotBlank() -> customApiKey.trim()
@@ -715,7 +726,7 @@ object LipiOnlineEngine {
         val chosenModel = model.trim().ifEmpty { "gemini-3.8-flash" }
 
         // Primary attempt
-        val primaryResult = executeSingleGeminiCall(text, effectiveApiKey, chosenModel)
+        val primaryResult = executeSingleGeminiCall(text, effectiveApiKey, chosenModel, mode)
         if (primaryResult.isSuccess) {
             return Result.success(primaryResult.text)
         }
@@ -724,7 +735,7 @@ object LipiOnlineEngine {
         if (primaryResult.isHighDemand || primaryResult.isRateLimit) {
             val fallbackModel = getFallbackModel(chosenModel)
             if (fallbackModel != chosenModel) {
-                val fallbackResult = executeSingleGeminiCall(text, effectiveApiKey, fallbackModel)
+                val fallbackResult = executeSingleGeminiCall(text, effectiveApiKey, fallbackModel, mode)
                 if (fallbackResult.isSuccess) {
                     return Result.success(fallbackResult.text)
                 }
