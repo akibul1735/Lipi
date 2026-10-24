@@ -393,13 +393,15 @@ fun StudioScreen(
                     )
                     Text(
                         text = when (selectedMode) {
-                            LipiMode.BENGALI_TO_BANGLISH -> "বাংলা → বাংলিশ রূপান্তর সক্রিয়"
-                            LipiMode.SPELL_DOCTOR -> "বাংলা বানান ডাক্তার সক্রিয়"
-                            else -> "তাৎক্ষণিক রূপান্তর"
+                            LipiMode.BENGALI_TO_BANGLISH -> "বাংলা → বাংলিশ সক্রিয়"
+                            LipiMode.SPELL_DOCTOR -> "বানান ডাক্তার সক্রিয়"
+                            else -> "তাৎক্ষণিক রূপান্তর সক্রিয়"
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.secondary,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
             }

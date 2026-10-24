@@ -107,8 +107,9 @@ fun FloatingNotificationGroupScreen(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (overlayGranted) "অন্যান্য অ্যাপের উপর প্রদর্শন সক্রিয়" else "অনুমতি প্রয়োজন (Overlay)",
-                            style = MaterialTheme.typography.titleMedium,
+                            text = if (overlayGranted) "অন্যান্য অ্যাপের উপর প্রদর্শন সক্রিয়" else "অনুমতি প্রয়োজন (Overlay)",
+                            style = MaterialTheme.typography.titleSmall,
+                            lineHeight = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (overlayGranted) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error
                         )

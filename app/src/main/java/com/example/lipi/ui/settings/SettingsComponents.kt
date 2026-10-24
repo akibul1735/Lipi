@@ -69,6 +69,7 @@ import com.example.lipi.data.TransliterationStyle
 import com.example.lipi.engine.LipiOnlineEngine
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.PadmaTealPrimary
+import com.example.ui.theme.TerracottaSecondary
 import kotlinx.coroutines.launch
 
 /**
@@ -129,12 +130,12 @@ fun SettingsGroupCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(18.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(46.dp)
+                    .size(42.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(PadmaTealPrimary.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
@@ -143,38 +144,59 @@ fun SettingsGroupCard(
                     imageVector = group.icon,
                     contentDescription = group.titleBn,
                     tint = PadmaTealPrimary,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
                         text = group.titleBn,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f, fill = false),
+                        maxLines = 2
                     )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    val isWarning = badgeText == "সতর্কতা" || badgeText.contains("সতর্ক")
+                    val isClosed = badgeText == "বন্ধ"
+                    val badgeBg = when {
+                        isWarning -> TerracottaSecondary.copy(alpha = 0.16f)
+                        isClosed -> MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
+                        else -> PadmaTealPrimary.copy(alpha = 0.14f)
+                    }
+                    val badgeFg = when {
+                        isWarning -> TerracottaSecondary
+                        isClosed -> MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> PadmaTealPrimary
+                    }
+
                     Surface(
                         shape = RoundedCornerShape(6.dp),
-                        color = PadmaTealPrimary.copy(alpha = 0.12f)
+                        color = badgeBg
                     ) {
                         Text(
                             text = badgeText,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            color = PadmaTealPrimary,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                            color = badgeFg,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.5.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(3.dp))
 
                 Text(
                     text = group.subtitleBn,
@@ -308,24 +330,31 @@ fun SettingsClickableRow(
 
             Column(modifier = Modifier.weight(1f)) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
                         text = title,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f, fill = false),
+                        maxLines = 2
                     )
                     if (badgeText != null) {
+                        Spacer(modifier = Modifier.width(6.dp))
                         Surface(
                             shape = RoundedCornerShape(4.dp),
                             color = PadmaTealPrimary.copy(alpha = 0.15f)
                         ) {
                             Text(
                                 text = badgeText,
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                                 color = PadmaTealPrimary,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }

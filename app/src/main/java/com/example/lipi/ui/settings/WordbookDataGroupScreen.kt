@@ -214,24 +214,27 @@ fun WordbookDataGroupScreen(
                         Button(
                             onClick = { isSingleEntryExpanded = !isSingleEntryExpanded },
                             modifier = Modifier
-                                .weight(1.2f)
+                                .weight(1.15f)
                                 .testTag("add_single_word_button"),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isSingleEntryExpanded) PadmaTealPrimary else MaterialTheme.colorScheme.surfaceVariant
                             ),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
                         ) {
                             Icon(
                                 Icons.Default.Add,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(15.dp),
                                 tint = if (isSingleEntryExpanded) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
                             Text(
                                 "নতুন শব্দ",
-                                fontSize = 12.sp,
+                                fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false,
                                 color = if (isSingleEntryExpanded) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -239,21 +242,35 @@ fun WordbookDataGroupScreen(
                         OutlinedButton(
                             onClick = { showImportDialog = true },
                             modifier = Modifier.weight(1f).testTag("bulk_import_button"),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
                         ) {
-                            Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("ইমপোর্ট", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                "ইমপোর্ট",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
                         }
 
                         OutlinedButton(
                             onClick = { showExportDialog = true },
                             modifier = Modifier.weight(1f).testTag("export_data_button"),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
                         ) {
-                            Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("এক্সপোর্ট", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                "এক্সপোর্ট",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
                         }
                     }
 
@@ -331,22 +348,24 @@ fun WordbookDataGroupScreen(
                         OutlinedButton(
                             onClick = { showResetConfirmDialog = true },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
                         ) {
                             Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("ডিফল্ট রিস্টোর", fontSize = 11.sp)
+                            Text("ডিফল্ট রিস্টোর", fontSize = 11.sp, maxLines = 1, softWrap = false)
                         }
 
                         OutlinedButton(
                             onClick = { showClearConfirmDialog = true },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                         ) {
                             Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("সব মুছুন", fontSize = 11.sp)
+                            Text("সব মুছুন", fontSize = 11.sp, maxLines = 1, softWrap = false)
                         }
                     }
                 }
@@ -535,15 +554,26 @@ fun WordbookDataGroupScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("মোট ${customWordbook.size}টি শব্দ ব্যাকআপ হিসেবে সংরক্ষণ বা শেয়ার করতে পারেন:")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Button(
                             onClick = { exportFormat = "txt" },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = if (exportFormat == "txt") PadmaTealPrimary else MaterialTheme.colorScheme.surfaceVariant)
-                        ) { Text("টেক্সট ফরম্যাট (.txt)") }
+                        ) {
+                            Text("টেক্সট (.txt)", fontSize = 12.sp, maxLines = 1, softWrap = false)
+                        }
                         Button(
                             onClick = { exportFormat = "json" },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = if (exportFormat == "json") PadmaTealPrimary else MaterialTheme.colorScheme.surfaceVariant)
-                        ) { Text("JSON ফরম্যাট (.json)") }
+                        ) {
+                            Text("JSON (.json)", fontSize = 12.sp, maxLines = 1, softWrap = false)
+                        }
                     }
                 }
             },
