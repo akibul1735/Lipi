@@ -114,41 +114,41 @@ class LipiOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Satisfy Android 8+ foreground service requirements immediately
-        val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
-        val isNotificationEnabled = prefs.getBoolean("persistent_notification_enabled", true)
-        if (isNotificationEnabled && intent?.action != ACTION_DISMISS) {
-            updatePersistentNotification()
-        }
-
-        if (!Settings.canDrawOverlays(this)) {
-            if (intent?.action == ACTION_DISMISS) {
-                stopSelf()
-                return START_NOT_STICKY
+        try {
+            // Satisfy Android 8+ foreground service requirements immediately if notification is enabled
+            val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
+            val isNotificationEnabled = prefs.getBoolean("persistent_notification_enabled", true)
+            if (isNotificationEnabled && intent?.action != ACTION_DISMISS) {
+                updatePersistentNotification()
             }
-            // If overlay permission not granted, but notification is enabled, allow service for status bar quick bar
-            if (!isNotificationEnabled) {
-                mainHandler.post {
-                    Toast.makeText(this, "লিপি: ভাসমান উইন্ডো অনুমতি প্রয়োজন", Toast.LENGTH_LONG).show()
-                }
-                stopSelf()
-                return START_NOT_STICKY
-            }
-        }
 
-        when (intent?.action) {
-            ACTION_DISMISS -> {
+            if (!Settings.canDrawOverlays(this)) {
                 dismissAllOverlays()
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                } else {
-                    @Suppress("DEPRECATION")
-                    stopForeground(true)
+                if (intent?.action == ACTION_DISMISS) {
+                    stopSelf()
+                    return START_NOT_STICKY
                 }
-                cancelPersistentNotification()
-                stopSelf()
-                return START_NOT_STICKY
+                if (!isNotificationEnabled) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
             }
+
+            when (intent?.action) {
+                ACTION_DISMISS -> {
+                    dismissAllOverlays()
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                            stopForeground(STOP_FOREGROUND_REMOVE)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            stopForeground(true)
+                        }
+                    } catch (_: Exception) {}
+                    cancelPersistentNotification()
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
             ACTION_OPEN_POPUP -> {
                 val displayMetrics = resources.displayMetrics
                 val centerX = displayMetrics.widthPixels / 2
@@ -209,9 +209,12 @@ class LipiOverlayService : Service() {
                 updatePersistentNotification()
             }
         }
-
         return START_STICKY
+    } catch (t: Throwable) {
+        t.printStackTrace()
+        return START_NOT_STICKY
     }
+}
 
     private fun getTransliterationStyle(): com.example.lipi.data.TransliterationStyle {
         val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
@@ -1528,16 +1531,18 @@ class LipiOverlayService : Service() {
 
         // Start in Foreground so the system does not kill the service or dismiss the notification
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                try {
                     startForeground(
                         NOTIFICATION_ID,
                         notification,
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
                     )
-                } else {
+                } catch (e: Exception) {
                     startForeground(NOTIFICATION_ID, notification)
                 }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification)
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }

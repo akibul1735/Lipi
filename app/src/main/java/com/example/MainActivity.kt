@@ -34,6 +34,13 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Safely catch any unexpected global exceptions to prevent force closes
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            android.util.Log.e("LipiCrashGuard", "Caught uncaught exception in thread: ${thread.name}", throwable)
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+
         // Monitor floating switch and manage LipiOverlayService lifecycle
         lifecycleScope.launch {
             viewModel.isFloatingServiceEnabled.collectLatest { enabled ->
@@ -46,7 +53,7 @@ class MainActivity : ComponentActivity() {
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
-                } else if (!enabled) {
+                } else if (!enabled && Settings.canDrawOverlays(this@MainActivity)) {
                     val intent = Intent(this@MainActivity, LipiOverlayService::class.java).apply {
                         action = LipiOverlayService.ACTION_DISMISS
                     }
@@ -62,7 +69,7 @@ class MainActivity : ComponentActivity() {
         // Monitor persistent notification switch to update status bar notification
         lifecycleScope.launch {
             viewModel.isPersistentNotificationEnabled.collectLatest { enabled ->
-                if (Settings.canDrawOverlays(this@MainActivity) || enabled) {
+                if (enabled && Settings.canDrawOverlays(this@MainActivity)) {
                     val intent = Intent(this@MainActivity, LipiOverlayService::class.java).apply {
                         action = LipiOverlayService.ACTION_UPDATE_NOTIFICATION
                     }
