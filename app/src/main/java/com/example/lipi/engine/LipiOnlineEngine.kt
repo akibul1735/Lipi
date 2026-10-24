@@ -290,28 +290,98 @@ object LipiOnlineEngine {
         }
     }
 
+    data class GeminiTestResult(
+        val isSuccess: Boolean,
+        val isHighDemandFallback: Boolean = false,
+        val modelUsed: String = "",
+        val convertedText: String = "",
+        val message: String = ""
+    )
+
+    private data class GeminiExecutionResult(
+        val isSuccess: Boolean,
+        val text: String = "",
+        val httpCode: Int = 0,
+        val rawErrorMessage: String = "",
+        val isHighDemand: Boolean = false,
+        val isRateLimit: Boolean = false,
+        val isAuthError: Boolean = false
+    )
+
     /**
-     * Gemini AI contextual Banglish-to-Bengali translation.
+     * Determines the optimal stable fallback model if the primary model suffers from 503 High Demand or 429 Rate Limit.
      */
-    private fun transliterateWithGemini(
+    fun getFallbackModel(currentModel: String): String {
+        val clean = currentModel.trim()
+        return when {
+            clean.contains("3.8") && clean.contains("pro") -> "gemini-2.5-pro"
+            clean.contains("3.8") -> "gemini-2.5-flash"
+            clean.contains("3.0") -> "gemini-2.5-flash"
+            clean == "gemini-2.5-flash" -> "gemini-2.0-flash"
+            clean == "gemini-2.5-pro" -> "gemini-2.5-flash"
+            clean != "gemini-2.5-flash" -> "gemini-2.5-flash"
+            else -> "gemini-2.0-flash"
+        }
+    }
+
+    /**
+     * Parses Google Gemini API error payloads into clear, human-readable Bengali descriptions.
+     */
+    fun parseGeminiErrorMessage(rawError: String, responseCode: Int, model: String): String {
+        try {
+            val trimmed = rawError.trim()
+            if (trimmed.startsWith("{")) {
+                val json = JSONObject(trimmed)
+                val errorObj = json.optJSONObject("error")
+                if (errorObj != null) {
+                    val code = errorObj.optInt("code", responseCode)
+                    val msg = errorObj.optString("message", "")
+                    val status = errorObj.optString("status", "")
+
+                    return when {
+                        code == 503 || status == "UNAVAILABLE" || msg.contains("high demand", ignoreCase = true) -> {
+                            "গুগল সার্ভার সাময়িক ব্যস্ত (503 High Demand): নির্বাচিত '$model' মডেলে এই মুহূর্তে বিশ্বব্যাপী অতিরিক্ত ট্রাফিকের চাপ রয়েছে। অনুগ্রহ করে কিছুক্ষণ পর চেষ্টা করুন অথবা স্থিতিশীল Gemini 2.5 Flash মডেল বেছে নিন।"
+                        }
+                        code == 429 || status == "RESOURCE_EXHAUSTED" || msg.contains("quota", ignoreCase = true) -> {
+                            "এপিআই কোটা বা রেট লিমিট অতিক্রম করেছে (429 Rate Limit)। অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করে চেষ্টা করুন।"
+                        }
+                        code == 403 || status == "PERMISSION_DENIED" || msg.contains("API key", ignoreCase = true) -> {
+                            "API Key সংক্রান্ত ত্রুটি (403): আপনার Gemini API কী সঠিক ও সক্রিয় কিনা যাচাই করুন।"
+                        }
+                        code == 404 || status == "NOT_FOUND" -> {
+                            "মডেলটি পাওয়া যায়নি (404 Not Found): '$model' মডেলটি বর্তমান API সংস্করণে অনুপস্থিত। তালিকা রিফ্রেশ করে অন্য কোনো সক্রিয় মডেল বেছে নিন।"
+                        }
+                        else -> {
+                            "গুগল এআই ত্রুটি ($code): ${msg.ifBlank { trimmed }}"
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        return when {
+            responseCode == 503 || rawError.contains("high demand", ignoreCase = true) || rawError.contains("UNAVAILABLE", ignoreCase = true) -> {
+                "গুগল সার্ভার সাময়িক ব্যস্ত (503 High Demand): '$model' মডেলে সাময়িক উচ্চ চাপ রয়েছে।"
+            }
+            responseCode == 429 -> {
+                "এপিআই কোটা বা রেট লিমিট অতিক্রম করেছে (429 Rate Limit)। কিছুক্ষণ পর চেষ্টা করুন।"
+            }
+            rawError.isNotBlank() && !rawError.startsWith("{") -> {
+                rawError
+            }
+            else -> {
+                "এআই রেসপন্স ত্রুটি: HTTP $responseCode"
+            }
+        }
+    }
+
+    private fun executeSingleGeminiCall(
         text: String,
-        customApiKey: String,
-        model: String = "gemini-3.8-flash"
-    ): Result<String> {
-        val effectiveApiKey = when {
-            customApiKey.isNotBlank() -> customApiKey.trim()
-            try { BuildConfig.GEMINI_API_KEY.isNotBlank() } catch (_: Exception) { false } -> BuildConfig.GEMINI_API_KEY
-            else -> ""
-        }
-
-        if (effectiveApiKey.isBlank() || effectiveApiKey == "your_api_key_here") {
-            return Result.failure(Exception("Gemini API Key পাওয়া যায়নি। সেটিংসে আপনার API Key যুক্ত করুন অথবা Google ক্লাউড ইঞ্জিন ব্যবহার করুন।"))
-        }
-
-        val chosenModel = model.trim().ifEmpty { "gemini-3.8-flash" }
-
+        effectiveApiKey: String,
+        model: String
+    ): GeminiExecutionResult {
         return try {
-            val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$chosenModel:generateContent?key=$effectiveApiKey"
+            val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$effectiveApiKey"
             val url = URL(endpoint)
             val connection = url.openConnection() as HttpURLConnection
             connection.requestMethod = "POST"
@@ -361,21 +431,163 @@ object LipiOnlineEngine {
                     if (parts != null && parts.length() > 0) {
                         val generatedText = parts.getJSONObject(0).optString("text", "").trim()
                         if (generatedText.isNotBlank()) {
-                            return Result.success(TextNormalizer.postNormalizeBengali(generatedText))
+                            return GeminiExecutionResult(
+                                isSuccess = true,
+                                text = TextNormalizer.postNormalizeBengali(generatedText)
+                            )
                         }
                     }
                 }
-                Result.failure(Exception("এআই থেকে কোনো উত্তর পাওয়া যায়নি"))
+                GeminiExecutionResult(
+                    isSuccess = false,
+                    rawErrorMessage = "এআই থেকে কোনো উত্তর পাওয়া যায়নি",
+                    httpCode = 200
+                )
             } else {
                 val errorStream = connection.errorStream
                 val errorMsg = if (errorStream != null) {
                     BufferedReader(InputStreamReader(errorStream, "UTF-8")).use { it.readText() }
                 } else "HTTP $responseCode"
                 connection.disconnect()
-                Result.failure(Exception("এআই রেসপন্স ত্রুটি: $errorMsg"))
+
+                val isHighDemand = responseCode == 503 ||
+                        errorMsg.contains("high demand", ignoreCase = true) ||
+                        errorMsg.contains("UNAVAILABLE", ignoreCase = true)
+
+                val isRateLimit = responseCode == 429 ||
+                        errorMsg.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ||
+                        errorMsg.contains("quota", ignoreCase = true)
+
+                val isAuthError = responseCode == 400 || responseCode == 403 ||
+                        errorMsg.contains("API_KEY_INVALID", ignoreCase = true) ||
+                        errorMsg.contains("PERMISSION_DENIED", ignoreCase = true)
+
+                GeminiExecutionResult(
+                    isSuccess = false,
+                    httpCode = responseCode,
+                    rawErrorMessage = errorMsg,
+                    isHighDemand = isHighDemand,
+                    isRateLimit = isRateLimit,
+                    isAuthError = isAuthError
+                )
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            GeminiExecutionResult(
+                isSuccess = false,
+                httpCode = 0,
+                rawErrorMessage = e.message ?: "কানেকশন ব্যাহত হয়েছে"
+            )
         }
+    }
+
+    /**
+     * Gemini AI contextual Banglish-to-Bengali translation with auto-fallback on 503 High Demand or 429 Rate Limit.
+     */
+    private fun transliterateWithGemini(
+        text: String,
+        customApiKey: String,
+        model: String = "gemini-3.8-flash"
+    ): Result<String> {
+        val effectiveApiKey = when {
+            customApiKey.isNotBlank() -> customApiKey.trim()
+            try { BuildConfig.GEMINI_API_KEY.isNotBlank() } catch (_: Exception) { false } -> BuildConfig.GEMINI_API_KEY
+            else -> ""
+        }
+
+        if (effectiveApiKey.isBlank() || effectiveApiKey == "your_api_key_here") {
+            return Result.failure(Exception("Gemini API Key পাওয়া যায়নি। সেটিংসে আপনার API Key যুক্ত করুন অথবা Google ক্লাউড ইঞ্জিন ব্যবহার করুন।"))
+        }
+
+        val chosenModel = model.trim().ifEmpty { "gemini-3.8-flash" }
+
+        // Primary attempt
+        val primaryResult = executeSingleGeminiCall(text, effectiveApiKey, chosenModel)
+        if (primaryResult.isSuccess) {
+            return Result.success(primaryResult.text)
+        }
+
+        // Auto-fallback: If primary model experienced 503 High Demand or 429 Rate Limit, seamlessly fallback
+        if (primaryResult.isHighDemand || primaryResult.isRateLimit) {
+            val fallbackModel = getFallbackModel(chosenModel)
+            if (fallbackModel != chosenModel) {
+                val fallbackResult = executeSingleGeminiCall(text, effectiveApiKey, fallbackModel)
+                if (fallbackResult.isSuccess) {
+                    return Result.success(fallbackResult.text)
+                }
+            }
+        }
+
+        // Parse error cleanly into human-readable Bengali
+        val cleanError = parseGeminiErrorMessage(primaryResult.rawErrorMessage, primaryResult.httpCode, chosenModel)
+        return Result.failure(Exception(cleanError))
+    }
+
+    /**
+     * Diagnostic test for Gemini API connectivity with intelligent fallback reporting.
+     */
+    suspend fun testGeminiConnection(
+        customApiKey: String,
+        model: String,
+        sampleText: String = "Khawya suru korli naki abr??"
+    ): GeminiTestResult = withContext(Dispatchers.IO) {
+        val effectiveApiKey = when {
+            customApiKey.isNotBlank() -> customApiKey.trim()
+            try { BuildConfig.GEMINI_API_KEY.isNotBlank() } catch (_: Exception) { false } -> BuildConfig.GEMINI_API_KEY
+            else -> ""
+        }
+
+        if (effectiveApiKey.isBlank() || effectiveApiKey == "your_api_key_here") {
+            return@withContext GeminiTestResult(
+                isSuccess = false,
+                message = "Gemini API Key প্রদান করা হয়নি। অনুগ্রহ করে সেটিংসে আপনার নিজস্ব Gemini API Key লিখুন।"
+            )
+        }
+
+        val chosenModel = model.trim().ifEmpty { "gemini-3.8-flash" }
+        val primaryResult = executeSingleGeminiCall(sampleText, effectiveApiKey, chosenModel)
+
+        if (primaryResult.isSuccess) {
+            return@withContext GeminiTestResult(
+                isSuccess = true,
+                modelUsed = chosenModel,
+                convertedText = primaryResult.text,
+                message = "সফল! [$chosenModel]\nরূপান্তর: ${primaryResult.text}\nলিপির সাথে মডেলটির সংযোগ সম্পূর্ণ সক্রিয়।"
+            )
+        }
+
+        // If primary model experienced 503 High Demand or 429 Rate Limit
+        if (primaryResult.isHighDemand || primaryResult.isRateLimit) {
+            val fallbackModel = getFallbackModel(chosenModel)
+            val fallbackResult = executeSingleGeminiCall(sampleText, effectiveApiKey, fallbackModel)
+
+            if (fallbackResult.isSuccess) {
+                return@withContext GeminiTestResult(
+                    isSuccess = true,
+                    isHighDemandFallback = true,
+                    modelUsed = fallbackModel,
+                    convertedText = fallbackResult.text,
+                    message = "⚠️ নির্বাচিত মডেলে উচ্চ চাপ (503 High Demand):\n" +
+                            "গুগলের '$chosenModel' সার্ভারে এই মুহূর্তে বিশ্বব্যাপী সাময়িক অতিরিক্ত চাপ রয়েছে।\n\n" +
+                            "✅ কিন্তু আপনার API Key সম্পূর্ণ কার্যকর ও সক্রিয়!\n" +
+                            "স্বয়ংক্রিয় ব্যাকআপ মডেল ($fallbackModel) দিয়ে সফলভাবে রূপান্তর হয়েছে:\n" +
+                            "\"${fallbackResult.text}\"\n\n" +
+                            "💡 পরামর্শ: নিরবচ্ছিন্ন সেবার জন্য আপনি তালিকা থেকে সরাসরি '$fallbackModel' বেছে নিতে পারেন, অথবা এই মডেল রাখলেও লিপি ব্যাকআপ মডেল দিয়ে টাইপিং চালু রাখবে।"
+                )
+            } else {
+                val fallbackError = parseGeminiErrorMessage(fallbackResult.rawErrorMessage, fallbackResult.httpCode, fallbackModel)
+                return@withContext GeminiTestResult(
+                    isSuccess = false,
+                    message = "গুগল সার্ভার সাময়িক ব্যস্ত (503 High Demand):\n" +
+                            "'$chosenModel' এবং ব্যাকআপ মডেল উভয়টিতেই গুগলের সার্ভারে চাপ রয়েছে। অনুগ্রহ করে কিছুক্ষণ পর চেষ্টা করুন।"
+                )
+            }
+        }
+
+        // Other error
+        val cleanError = parseGeminiErrorMessage(primaryResult.rawErrorMessage, primaryResult.httpCode, chosenModel)
+        GeminiTestResult(
+            isSuccess = false,
+            message = cleanError
+        )
     }
 }

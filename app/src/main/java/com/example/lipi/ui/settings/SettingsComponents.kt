@@ -660,6 +660,7 @@ fun OnlineEngineBottomSheet(
     }
     var isTesting by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
+    var testResultType by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
@@ -912,6 +913,19 @@ fun OnlineEngineBottomSheet(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
 
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = PadmaTealPrimary.copy(alpha = 0.08f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "💡 পরামর্শ: ৩.৮ খুব নতুন হওয়ায় গুগলে মাঝে মাঝে অতিরিক্ত চাপ (503 High Demand) দেখা দেয়। লিপি স্বয়ংক্রিয়ভাবে ব্যাকআপ মডেলে (Gemini 2.5 Flash) রূপান্তর করে টাইপিং চালু রাখে।",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                    color = PadmaTealPrimary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                )
+                            }
+
                             if (fetchFeedback != null) {
                                 Surface(
                                     shape = RoundedCornerShape(6.dp),
@@ -1102,22 +1116,32 @@ fun OnlineEngineBottomSheet(
                     scope.launch {
                         isTesting = true
                         testResult = "টেস্ট করা হচ্ছে..."
-                        val provider = if (currentMode == OnlineEngineMode.GEMINI_AI) LipiOnlineEngine.Provider.GEMINI_AI else LipiOnlineEngine.Provider.GOOGLE_INPUT_TOOLS
-                        val res = LipiOnlineEngine.transliterateOnline(
-                            inputText = "Khawya suru korli naki abr??",
-                            provider = provider,
-                            customGeminiApiKey = apiKeyInput,
-                            geminiModel = selectedModel
-                        )
-                        isTesting = false
-                        res.onSuccess {
-                            testResult = if (currentMode == OnlineEngineMode.GEMINI_AI) {
-                                "সফল! [মডেল: $selectedModel]\nরূপান্তর: $it"
-                            } else {
-                                "সফল! রূপান্তর: $it"
+                        testResultType = 0
+                        if (currentMode == OnlineEngineMode.GEMINI_AI) {
+                            val res = LipiOnlineEngine.testGeminiConnection(
+                                customApiKey = apiKeyInput,
+                                model = selectedModel
+                            )
+                            isTesting = false
+                            testResult = res.message
+                            testResultType = when {
+                                res.isHighDemandFallback -> 2
+                                res.isSuccess -> 1
+                                else -> 3
                             }
-                        }.onFailure {
-                            testResult = "ত্রুটি: ${it.message}"
+                        } else {
+                            val res = LipiOnlineEngine.transliterateOnline(
+                                inputText = "Khawya suru korli naki abr??",
+                                provider = LipiOnlineEngine.Provider.GOOGLE_INPUT_TOOLS
+                            )
+                            isTesting = false
+                            res.onSuccess {
+                                testResult = "সফল! রূপান্তর: $it\nগুগল ক্লাউড ইঞ্জিন সম্পূর্ণ সচল।"
+                                testResultType = 1
+                            }.onFailure {
+                                testResult = "ত্রুটি: ${it.message ?: "কানেকশন ব্যাহত হয়েছে"}"
+                                testResultType = 3
+                            }
                         }
                     }
                 },
@@ -1142,12 +1166,35 @@ fun OnlineEngineBottomSheet(
             }
 
             if (testResult != null) {
+                val bgColor = when (testResultType) {
+                    1 -> PadmaTealPrimary.copy(alpha = 0.12f)
+                    2 -> Color(0xFFF57C00).copy(alpha = 0.12f)
+                    3 -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                }
+                val borderColor = when (testResultType) {
+                    1 -> PadmaTealPrimary.copy(alpha = 0.4f)
+                    2 -> Color(0xFFF57C00).copy(alpha = 0.4f)
+                    3 -> MaterialTheme.colorScheme.error.copy(alpha = 0.3f)
+                    else -> Color.Transparent
+                }
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    color = bgColor,
+                    border = BorderStroke(1.dp, borderColor),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(text = testResult!!, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(10.dp))
+                    Text(
+                        text = testResult!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = when (testResultType) {
+                            1 -> PadmaTealPrimary
+                            2 -> Color(0xFFE65100)
+                            3 -> MaterialTheme.colorScheme.onErrorContainer
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.padding(10.dp)
+                    )
                 }
             }
         }
