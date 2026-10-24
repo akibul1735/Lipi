@@ -41,7 +41,15 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
     val onlineEngineMode: StateFlow<OnlineEngineMode> = repository.onlineEngineMode
     val geminiApiKey: StateFlow<String> = repository.geminiApiKey
     val geminiModel: StateFlow<String> = repository.geminiModel
+    val geminiModelFallback1: StateFlow<String> = repository.geminiModelFallback1
+    val geminiModelFallback2: StateFlow<String> = repository.geminiModelFallback2
     val fetchedGeminiModels: StateFlow<List<com.example.lipi.engine.LipiOnlineEngine.GeminiModelInfo>> = repository.fetchedGeminiModels
+
+    private val _modelsHealthStatus = MutableStateFlow<Map<String, com.example.lipi.engine.LipiOnlineEngine.ModelHealthStatus>>(emptyMap())
+    val modelsHealthStatus: StateFlow<Map<String, com.example.lipi.engine.LipiOnlineEngine.ModelHealthStatus>> = _modelsHealthStatus.asStateFlow()
+
+    private val _isTestingModels = MutableStateFlow(false)
+    val isTestingModels: StateFlow<Boolean> = _isTestingModels.asStateFlow()
 
     private val _isFetchingGeminiModels = MutableStateFlow(false)
     val isFetchingGeminiModels: StateFlow<Boolean> = _isFetchingGeminiModels.asStateFlow()
@@ -140,6 +148,67 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
         }
     }
 
+    fun setGeminiModelFallback1(model: String) {
+        repository.setGeminiModelFallback1(model)
+    }
+
+    fun setGeminiModelFallback2(model: String) {
+        repository.setGeminiModelFallback2(model)
+    }
+
+    fun testSingleModel(slotLabel: String, modelId: String) {
+        val key = repository.geminiApiKey.value
+        val current = _modelsHealthStatus.value.toMutableMap()
+        current[modelId] = com.example.lipi.engine.LipiOnlineEngine.ModelHealthStatus(
+            modelId = modelId,
+            roleLabel = slotLabel,
+            state = com.example.lipi.engine.LipiOnlineEngine.ModelHealthState.CHECKING,
+            message = "যাচাই করা হচ্ছে..."
+        )
+        _modelsHealthStatus.value = current
+
+        viewModelScope.launch {
+            val res = com.example.lipi.engine.LipiOnlineEngine.checkModelHealth(key, modelId, slotLabel)
+            val updated = _modelsHealthStatus.value.toMutableMap()
+            updated[modelId] = res
+            _modelsHealthStatus.value = updated
+        }
+    }
+
+    fun testAllConfiguredModels() {
+        val key = repository.geminiApiKey.value
+        val m1 = repository.geminiModel.value
+        val m2 = repository.geminiModelFallback1.value
+        val m3 = repository.geminiModelFallback2.value
+        val models = listOf(
+            Pair("মডেল ১ (প্রধান)", m1),
+            Pair("মডেল ২ (বিকল্প ১)", m2),
+            Pair("মডেল ৩ (বিকল্প ২)", m3)
+        )
+
+        viewModelScope.launch {
+            _isTestingModels.value = true
+            val initial = _modelsHealthStatus.value.toMutableMap()
+            models.forEach { (slot, mId) ->
+                initial[mId] = com.example.lipi.engine.LipiOnlineEngine.ModelHealthStatus(
+                    modelId = mId,
+                    roleLabel = slot,
+                    state = com.example.lipi.engine.LipiOnlineEngine.ModelHealthState.CHECKING,
+                    message = "যাচাই করা হচ্ছে..."
+                )
+            }
+            _modelsHealthStatus.value = initial
+
+            models.forEach { (slot, mId) ->
+                val res = com.example.lipi.engine.LipiOnlineEngine.checkModelHealth(key, mId, slot)
+                val map = _modelsHealthStatus.value.toMutableMap()
+                map[mId] = res
+                _modelsHealthStatus.value = map
+            }
+            _isTestingModels.value = false
+        }
+    }
+
     fun loadTrainedChatDataset(): com.example.lipi.data.ImportResult {
         return repository.loadTrainedChatDataset()
     }
@@ -162,12 +231,14 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
                 "Google ক্লাউড ট্রান্সলিটারেশন করা হচ্ছে..."
             }
 
+            val chain = repository.getGeminiModelsChain()
             val result = LipiOnlineEngine.transliterateSmart(
                 inputText = currentInput,
                 mode = _selectedMode.value,
                 enginePreference = mode,
                 customGeminiApiKey = repository.geminiApiKey.value,
                 geminiModel = repository.geminiModel.value,
+                geminiModelsChain = chain,
                 customWordbook = customWordbookMap.value,
                 convertDigitsToBengali = convertDigitsToBengali.value,
                 transliterationStyle = transliterationStyle.value
@@ -175,7 +246,19 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
             _isOnlineTranslating.value = false
 
             _onlineRefinedResult.value = result.convertedText
-            _onlineFeedback.value = result.feedbackMessage
+            
+            // Auto-cache learned words from Gemini into wordbook (e.g. 'clg' -> 'কলেজ')
+            if (result.engineUsed == OnlineEngineMode.GEMINI_AI && !result.isFallbackToOffline) {
+                val learned = repository.learnWordMappingFromGemini(currentInput, result.convertedText)
+                if (learned.isNotEmpty()) {
+                    val learnedSummary = learned.joinToString(", ") { "${it.first} → ${it.second}" }
+                    _onlineFeedback.value = "${result.feedbackMessage ?: "Gemini AI সফল"} (শব্দকোষে সংরক্ষিত: $learnedSummary)"
+                } else {
+                    _onlineFeedback.value = result.feedbackMessage
+                }
+            } else {
+                _onlineFeedback.value = result.feedbackMessage
+            }
 
             val finalResult = ConversionResult(
                 originalText = currentInput,

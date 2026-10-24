@@ -63,6 +63,16 @@ class LipiRepository(private val context: Context) {
     )
     val geminiModel: StateFlow<String> = _geminiModel.asStateFlow()
 
+    private val _geminiModelFallback1 = MutableStateFlow(
+        prefs.getString("custom_gemini_model_fallback_1", "gemini-3.8-flash-lite") ?: "gemini-3.8-flash-lite"
+    )
+    val geminiModelFallback1: StateFlow<String> = _geminiModelFallback1.asStateFlow()
+
+    private val _geminiModelFallback2 = MutableStateFlow(
+        prefs.getString("custom_gemini_model_fallback_2", "gemini-2.5-flash") ?: "gemini-2.5-flash"
+    )
+    val geminiModelFallback2: StateFlow<String> = _geminiModelFallback2.asStateFlow()
+
     private val _fetchedGeminiModels = MutableStateFlow<List<com.example.lipi.engine.LipiOnlineEngine.GeminiModelInfo>>(
         loadCachedGeminiModels()
     )
@@ -88,6 +98,32 @@ class LipiRepository(private val context: Context) {
         val cleanModel = model.trim().ifEmpty { "gemini-3.8-flash" }
         prefs.edit().putString("custom_gemini_model", cleanModel).apply()
         _geminiModel.value = cleanModel
+    }
+
+    fun setGeminiModelFallback1(model: String) {
+        val cleanModel = model.trim().ifEmpty { "gemini-3.8-flash-lite" }
+        prefs.edit().putString("custom_gemini_model_fallback_1", cleanModel).apply()
+        _geminiModelFallback1.value = cleanModel
+    }
+
+    fun setGeminiModelFallback2(model: String) {
+        val cleanModel = model.trim().ifEmpty { "gemini-2.5-flash" }
+        prefs.edit().putString("custom_gemini_model_fallback_2", cleanModel).apply()
+        _geminiModelFallback2.value = cleanModel
+    }
+
+    /**
+     * Returns the ordered 3-tier Gemini model chain:
+     * [Primary Model, Fallback Model 1, Fallback Model 2]
+     */
+    fun getGeminiModelsChain(): List<String> {
+        val m1 = _geminiModel.value.trim().ifEmpty { "gemini-3.8-flash" }
+        val m2 = _geminiModelFallback1.value.trim().ifEmpty { "gemini-3.8-flash-lite" }
+        val m3 = _geminiModelFallback2.value.trim().ifEmpty { "gemini-2.5-flash" }
+        val list = mutableListOf(m1)
+        if (!list.contains(m2)) list.add(m2)
+        if (!list.contains(m3)) list.add(m3)
+        return list
     }
 
     fun setFetchedGeminiModels(models: List<com.example.lipi.engine.LipiOnlineEngine.GeminiModelInfo>) {
@@ -203,6 +239,46 @@ class LipiRepository(private val context: Context) {
             )
         }
         saveCustomWordbook(updated)
+    }
+
+    /**
+     * Automatically caches / learns word mappings from Gemini transliteration results (e.g. 'clg' -> 'কলেজ').
+     * If an input word (like 'clg') becomes a Bengali word (like 'কলেজ') by Gemini,
+     * it automatically saves it into the custom wordbook so future offline processing immediately has that mapping.
+     * Returns the list of newly learned word pairs.
+     */
+    fun learnWordMappingFromGemini(inputText: String, geminiOutput: String): List<Pair<String, String>> {
+        val inClean = inputText.trim()
+        val outClean = geminiOutput.trim()
+        if (inClean.isBlank() || outClean.isBlank()) return emptyList()
+
+        val learned = mutableListOf<Pair<String, String>>()
+        val inTokens = inClean.split(Regex("\\s+")).filter { it.isNotBlank() }
+        val outTokens = outClean.split(Regex("\\s+")).filter { it.isNotBlank() }
+
+        // Case 1: Single-word or slang input (e.g. "clg" -> "কলেজ", "varsity" -> "ভার্সিটি", "dept" -> "ডিপার্টমেন্ট")
+        if (inTokens.size == 1 && outTokens.size == 1) {
+            val banglish = inTokens[0].filter { it.isLetter() }.lowercase()
+            val bengali = outTokens[0].trim(',', '.', '?', '!', '।', ';', ':', '"', '\'', '‘', '’', '“', '”')
+            if (banglish.length >= 2 && bengali.any { it in '\u0980'..'\u09FF' }) {
+                addWordbookEntry(banglish, bengali, "Gemini এআই লার্নিং")
+                learned.add(Pair(banglish, bengali))
+            }
+        } else if (inTokens.size == outTokens.size && inTokens.size in 2..15) {
+            // Case 2: 1-to-1 word correspondence in sentences (e.g. "ajke clg jabo" -> "আজকে কলেজ যাবো")
+            for (i in inTokens.indices) {
+                val rawIn = inTokens[i].filter { it.isLetter() }.lowercase()
+                val rawOut = outTokens[i].trim(',', '.', '?', '!', '।', ';', ':', '"', '\'', '‘', '’', '“', '”')
+                if (rawIn.length >= 2 && rawOut.any { it in '\u0980'..'\u09FF' }) {
+                    val existing = _customWordbook.value.find { it.banglish.equals(rawIn, ignoreCase = true) }
+                    if (existing == null || existing.bengali != rawOut) {
+                        addWordbookEntry(rawIn, rawOut, "Gemini এআই লার্নিং")
+                        learned.add(Pair(rawIn, rawOut))
+                    }
+                }
+            }
+        }
+        return learned
     }
 
     fun removeWordbookEntry(id: String) {

@@ -93,6 +93,7 @@ class LipiOverlayService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var currentTransliterationJob: Job? = null
     private var isServiceKilled: Boolean = false
+    private val repository by lazy { com.example.lipi.data.LipiRepository(this) }
 
     private var lastAppLogicResult: String = ""
     private var lastGeminiResult: String = ""
@@ -972,8 +973,10 @@ class LipiOverlayService : Service() {
         val targetMode = if (isReverseMode) LipiMode.BENGALI_TO_BANGLISH else LipiMode.BANGLISH_TO_BENGALI
         val customKey = getGeminiApiKey()
         val model = getGeminiModel()
+        val chain = repository.getGeminiModelsChain()
         val convertDigits = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE).getBoolean("convert_digits", false)
         val style = getTransliterationStyle()
+        val customWordMap = repository.customWordbook.value.associate { it.banglish.lowercase() to it.bengali }
 
         currentTransliterationJob = serviceScope.launch {
             try {
@@ -983,6 +986,8 @@ class LipiOverlayService : Service() {
                     enginePreference = if (force) OnlineEngineMode.GEMINI_AI else engineMode,
                     customGeminiApiKey = customKey,
                     geminiModel = model,
+                    geminiModelsChain = chain,
+                    customWordbook = customWordMap,
                     convertDigitsToBengali = convertDigits,
                     transliterationStyle = style
                 )
@@ -993,11 +998,21 @@ class LipiOverlayService : Service() {
                         convertedBengali = smartResult.convertedText
                         currentDisplaySource = "gemini"
                         activeTranslationText?.text = smartResult.convertedText
-                        val shortModel = model.replace("gemini-", "")
+
+                        // Auto-catch learned words from Gemini (e.g. 'clg' -> 'কলেজ') and save to wordbook
+                        val learned = repository.learnWordMappingFromGemini(trimmed, smartResult.convertedText)
+
+                        val actualModel = smartResult.modelUsed ?: model
+                        val shortModel = actualModel.replace("gemini-", "")
                         outputStatusLabelView?.text = "✨ Gemini AI ($shortModel) ফলাফল"
                         outputStatusLabelView?.setTextColor(0xFF57DFCE.toInt())
                         aiFeedbackLabelView?.visibility = View.VISIBLE
-                        aiFeedbackLabelView?.text = "✓ Gemini AI দ্বারা কনটেক্সট-সচেতন শুদ্ধ রূপান্তর"
+                        if (learned.isNotEmpty()) {
+                            val learnedStr = learned.joinToString(", ") { "${it.first} → ${it.second}" }
+                            aiFeedbackLabelView?.text = "✓ Gemini রূপান্তর সম্পন্ন (নতুন শব্দ যুক্ত: $learnedStr)"
+                        } else {
+                            aiFeedbackLabelView?.text = "✓ Gemini AI দ্বারা কনটেক্সট-সচেতন শুদ্ধ রূপান্তর"
+                        }
                         aiFeedbackLabelView?.setTextColor(0xFF81C784.toInt())
                         aiSwitchBtnView?.visibility = View.VISIBLE
                         aiSwitchBtnView?.text = "লজিক দেখুন"
@@ -1049,10 +1064,12 @@ class LipiOverlayService : Service() {
         val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
         val convertDigits = prefs.getBoolean("convert_digits", false)
         val mode = if (isReverseMode) com.example.lipi.data.LipiMode.BENGALI_TO_BANGLISH else com.example.lipi.data.LipiMode.SMART_AUTO
+        val customWordMap = repository.customWordbook.value.associate { it.banglish.lowercase() to it.bengali }
         return MixedScriptTokenizer.process(
             inputText = text,
             mode = mode,
             convertDigitsToBengali = convertDigits,
+            customWordbook = customWordMap,
             transliterationStyle = getTransliterationStyle()
         ).convertedText
     }

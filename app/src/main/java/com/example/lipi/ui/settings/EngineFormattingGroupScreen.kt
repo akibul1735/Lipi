@@ -61,6 +61,10 @@ fun EngineFormattingGroupScreen(
     val onlineEngineMode by viewModel.onlineEngineMode.collectAsState()
     val geminiApiKey by viewModel.geminiApiKey.collectAsState()
     val geminiModel by viewModel.geminiModel.collectAsState()
+    val geminiModelFallback1 by viewModel.geminiModelFallback1.collectAsState()
+    val geminiModelFallback2 by viewModel.geminiModelFallback2.collectAsState()
+    val modelsHealthStatus by viewModel.modelsHealthStatus.collectAsState()
+    val isTestingModels by viewModel.isTestingModels.collectAsState()
     val fetchedGeminiModels by viewModel.fetchedGeminiModels.collectAsState()
     val isFetchingModels by viewModel.isFetchingGeminiModels.collectAsState()
     val fetchFeedback by viewModel.fetchModelsFeedback.collectAsState()
@@ -123,7 +127,7 @@ fun EngineFormattingGroupScreen(
                     currentValue = when (onlineEngineMode) {
                         OnlineEngineMode.OFFLINE_ONLY -> "অফলাইন ইঞ্জিন (০ms ল্যাটেন্সি)"
                         OnlineEngineMode.ONLINE_CLOUD -> "Google ক্লাউড ট্রান্সলিটারেশন API"
-                        OnlineEngineMode.GEMINI_AI -> "Gemini AI ($geminiModel)"
+                        OnlineEngineMode.GEMINI_AI -> "Gemini AI ($geminiModel + ২ বিকল্প মডেল)"
                     },
                     icon = Icons.Default.Public,
                     badgeText = when (onlineEngineMode) {
@@ -238,9 +242,13 @@ fun EngineFormattingGroupScreen(
             currentMode = onlineEngineMode,
             currentApiKey = geminiApiKey,
             currentModel = geminiModel,
+            fallbackModel1 = geminiModelFallback1,
+            fallbackModel2 = geminiModelFallback2,
             fetchedModels = fetchedGeminiModels,
             isFetchingModels = isFetchingModels,
             fetchFeedback = fetchFeedback,
+            modelsHealthStatus = modelsHealthStatus,
+            isTestingModels = isTestingModels,
             onFetchModels = { key -> viewModel.fetchLatestGeminiModels(key) },
             onModeSelected = {
                 viewModel.setOnlineEngineMode(it)
@@ -252,7 +260,21 @@ fun EngineFormattingGroupScreen(
             },
             onModelSelected = {
                 viewModel.setGeminiModel(it)
-                Toast.makeText(context, "মডেল নির্বাচন: $it", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "প্রধান মডেল: $it", Toast.LENGTH_SHORT).show()
+            },
+            onFallbackModel1Selected = {
+                viewModel.setGeminiModelFallback1(it)
+                Toast.makeText(context, "১ম বিকল্প মডেল: $it", Toast.LENGTH_SHORT).show()
+            },
+            onFallbackModel2Selected = {
+                viewModel.setGeminiModelFallback2(it)
+                Toast.makeText(context, "২য় বিকল্প মডেল: $it", Toast.LENGTH_SHORT).show()
+            },
+            onTestSingleModel = { slot, id ->
+                viewModel.testSingleModel(slot, id)
+            },
+            onTestAllModels = {
+                viewModel.testAllConfiguredModels()
             },
             onDismiss = { showOnlineEngineBottomSheet = false }
         )

@@ -185,4 +185,26 @@ class ExampleUnitTest {
         val result = MixedScriptTokenizer.process(input, LipiMode.BANGLISH_TO_BENGALI)
         assertEquals("খাওয়া শুরু করলি নাকি আবার??", result.convertedText)
     }
+
+    @Test
+    fun testGeminiModelSuitabilityAndGrouping() {
+        assertTrue(com.example.lipi.engine.LipiOnlineEngine.isModelSuitableForLipi("gemini-3.8-flash"))
+        assertTrue(com.example.lipi.engine.LipiOnlineEngine.isModelSuitableForLipi("gemini-3.8-flash-lite"))
+        assertTrue(com.example.lipi.engine.LipiOnlineEngine.isModelSuitableForLipi("gemini-2.5-flash"))
+        assertFalse(com.example.lipi.engine.LipiOnlineEngine.isModelSuitableForLipi("text-embedding-004"))
+        assertFalse(com.example.lipi.engine.LipiOnlineEngine.isModelSuitableForLipi("imagen-3.0"))
+    }
+
+    @Test
+    fun testLearnedWordOverridesOfflineTransliteration() {
+        // If 'clg' was learned by Gemini to mean 'কলেজ' and saved in customWordbook
+        val customMap = mapOf("clg" to "কলেজ")
+        val input = "ajke clg bondho"
+        val result = MixedScriptTokenizer.process(
+            inputText = input,
+            mode = LipiMode.BANGLISH_TO_BENGALI,
+            customWordbook = customMap
+        )
+        assertEquals("আজকে কলেজ বন্ধ", result.convertedText)
+    }
 }

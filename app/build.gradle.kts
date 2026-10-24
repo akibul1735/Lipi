@@ -16,8 +16,8 @@ android {
     applicationId = "com.lipi.app"
     minSdk = 24
     targetSdk = 35
-    versionCode = 50
-    versionName = "1.6.7"
+    versionCode = 51
+    versionName = "1.6.8"
 
     vectorDrawables {
       useSupportLibrary = true

@@ -319,6 +319,31 @@ object LipiOnlineEngine {
         return score
     }
 
+    enum class ModelHealthState {
+        NOT_CHECKED,
+        CHECKING,
+        ACTIVE,
+        RATE_LIMITED,
+        HIGH_DEMAND,
+        ERROR
+    }
+
+    data class ModelHealthStatus(
+        val modelId: String,
+        val roleLabel: String,
+        val state: ModelHealthState = ModelHealthState.NOT_CHECKED,
+        val latencyMs: Long = 0,
+        val convertedSample: String = "",
+        val message: String = ""
+    )
+
+    data class GeminiTransliterationOutput(
+        val convertedText: String,
+        val modelUsed: String,
+        val wasFallbackUsed: Boolean = false,
+        val fallbackNote: String? = null
+    )
+
     /**
      * Translates or transliterates Banglish to authentic Bengali using online cloud/AI services.
      */
@@ -326,7 +351,8 @@ object LipiOnlineEngine {
         inputText: String,
         provider: Provider = Provider.GOOGLE_INPUT_TOOLS,
         customGeminiApiKey: String = "",
-        geminiModel: String = "gemini-2.5-flash",
+        geminiModel: String = "gemini-3.8-flash",
+        geminiModelsChain: List<String> = emptyList(),
         mode: LipiMode = LipiMode.BANGLISH_TO_BENGALI
     ): Result<String> = withContext(Dispatchers.IO) {
         val trimmed = inputText.trim()
@@ -335,7 +361,20 @@ object LipiOnlineEngine {
         try {
             when (provider) {
                 Provider.GOOGLE_INPUT_TOOLS -> transliterateWithGoogleInputTools(trimmed)
-                Provider.GEMINI_AI -> transliterateWithGemini(trimmed, customGeminiApiKey, geminiModel, mode)
+                Provider.GEMINI_AI -> {
+                    val geminiRes = transliterateWithGemini(
+                        text = trimmed,
+                        customApiKey = customGeminiApiKey,
+                        model = geminiModel,
+                        modelsChain = geminiModelsChain,
+                        mode = mode
+                    )
+                    if (geminiRes.isSuccess) {
+                        Result.success(geminiRes.getOrThrow().convertedText)
+                    } else {
+                        Result.failure(geminiRes.exceptionOrNull() ?: Exception("Gemini রূপান্তর ব্যর্থ"))
+                    }
+                }
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -349,15 +388,15 @@ object LipiOnlineEngine {
         val convertedText: String,
         val engineUsed: OnlineEngineMode,
         val isFallbackToOffline: Boolean = false,
-        val feedbackMessage: String? = null
+        val feedbackMessage: String? = null,
+        val modelUsed: String? = null
     )
 
     /**
      * Executes transliteration according to user's selected engine:
-     * - If Gemini AI is selected: Uses Gemini AI first. If offline, timeout, or network problem,
-     *   automatically falls back to authentic offline phonetic data so typing never fails.
-     * - If Google Input Tools (Transliteration API) is selected: Uses Google Input Tools first.
-     *   If offline or network error, automatically falls back to offline phonetic data.
+     * - If Gemini AI is selected: Uses Gemini AI with multi-model fallback chain (Model 1 -> Model 2 -> Model 3).
+     *   If all configured models rate-limit or fail, automatically falls back to authentic offline phonetic logic.
+     * - If Google Input Tools is selected: Uses Google Input Tools first, with offline fallback.
      * - If Offline Only: Uses offline data directly.
      */
     suspend fun transliterateSmart(
@@ -365,7 +404,8 @@ object LipiOnlineEngine {
         mode: LipiMode = LipiMode.BANGLISH_TO_BENGALI,
         enginePreference: OnlineEngineMode,
         customGeminiApiKey: String = "",
-        geminiModel: String = "gemini-2.5-flash",
+        geminiModel: String = "gemini-3.8-flash",
+        geminiModelsChain: List<String> = emptyList(),
         customWordbook: Map<String, String> = emptyMap(),
         convertDigitsToBengali: Boolean = false,
         transliterationStyle: TransliterationStyle = TransliterationStyle.ALL_BENGALI
@@ -399,20 +439,27 @@ object LipiOnlineEngine {
                 )
             }
             OnlineEngineMode.GEMINI_AI -> {
-                val geminiRes = transliterateOnline(
-                    inputText = trimmed,
-                    provider = Provider.GEMINI_AI,
-                    customGeminiApiKey = customGeminiApiKey,
-                    geminiModel = geminiModel,
+                val geminiRes = transliterateWithGemini(
+                    text = trimmed,
+                    customApiKey = customGeminiApiKey,
+                    model = geminiModel,
+                    modelsChain = geminiModelsChain,
                     mode = mode
                 )
                 if (geminiRes.isSuccess) {
+                    val out = geminiRes.getOrThrow()
+                    val feedback = if (out.wasFallbackUsed) {
+                        "বিকল্প মডেল (${out.modelUsed}) সফল!"
+                    } else {
+                        "Gemini AI (${out.modelUsed}) সফল!"
+                    }
                     SmartTransliterationResult(
                         originalText = trimmed,
-                        convertedText = geminiRes.getOrThrow(),
+                        convertedText = out.convertedText,
                         engineUsed = OnlineEngineMode.GEMINI_AI,
                         isFallbackToOffline = false,
-                        feedbackMessage = "Gemini AI স্মার্ট ইঞ্জিন সফল!"
+                        feedbackMessage = feedback,
+                        modelUsed = out.modelUsed
                     )
                 } else {
                     val exc = geminiRes.exceptionOrNull()
@@ -711,14 +758,16 @@ object LipiOnlineEngine {
     }
 
     /**
-     * Gemini AI contextual Banglish-to-Bengali translation with auto-fallback on 503 High Demand or 429 Rate Limit.
+     * Gemini AI contextual Banglish-to-Bengali translation with multi-model fallback chain.
+     * Tries Model 1 -> Model 2 -> Model 3 sequentially if rate-limit (429), 503 high demand or errors happen.
      */
     private fun transliterateWithGemini(
         text: String,
         customApiKey: String,
         model: String = "gemini-3.8-flash",
+        modelsChain: List<String> = emptyList(),
         mode: LipiMode = LipiMode.BANGLISH_TO_BENGALI
-    ): Result<String> {
+    ): Result<GeminiTransliterationOutput> {
         val effectiveApiKey = when {
             customApiKey.isNotBlank() -> customApiKey.trim()
             try { BuildConfig.GEMINI_API_KEY.isNotBlank() } catch (_: Exception) { false } -> BuildConfig.GEMINI_API_KEY
@@ -729,28 +778,123 @@ object LipiOnlineEngine {
             return Result.failure(Exception("Gemini API Key পাওয়া যায়নি। সেটিংসে আপনার API Key যুক্ত করুন অথবা Google ক্লাউড ইঞ্জিন ব্যবহার করুন।"))
         }
 
-        val chosenModel = model.trim().ifEmpty { "gemini-3.8-flash" }
-
-        // Primary attempt
-        val primaryResult = executeSingleGeminiCall(text, effectiveApiKey, chosenModel, mode)
-        if (primaryResult.isSuccess) {
-            return Result.success(primaryResult.text)
-        }
-
-        // Auto-fallback: If primary model experienced 503 High Demand or 429 Rate Limit, seamlessly fallback
-        if (primaryResult.isHighDemand || primaryResult.isRateLimit) {
-            val fallbackModel = getFallbackModel(chosenModel)
-            if (fallbackModel != chosenModel) {
-                val fallbackResult = executeSingleGeminiCall(text, effectiveApiKey, fallbackModel, mode)
-                if (fallbackResult.isSuccess) {
-                    return Result.success(fallbackResult.text)
-                }
+        val chain = mutableListOf<String>()
+        if (modelsChain.isNotEmpty()) {
+            modelsChain.forEach { m ->
+                val clean = m.trim()
+                if (clean.isNotEmpty() && !chain.contains(clean)) chain.add(clean)
             }
         }
+        if (chain.isEmpty()) {
+            val chosen = model.trim().ifEmpty { "gemini-3.8-flash" }
+            chain.add(chosen)
+            val fb = getFallbackModel(chosen)
+            if (!chain.contains(fb)) chain.add(fb)
+        }
 
-        // Parse error cleanly into human-readable Bengali
-        val cleanError = parseGeminiErrorMessage(primaryResult.rawErrorMessage, primaryResult.httpCode, chosenModel)
-        return Result.failure(Exception(cleanError))
+        var lastErrorMsg = ""
+        var lastHttpCode = 0
+        var lastModelTried = ""
+        val errorLogs = mutableListOf<String>()
+
+        for ((index, currentModel) in chain.withIndex()) {
+            lastModelTried = currentModel
+            val callResult = executeSingleGeminiCall(text, effectiveApiKey, currentModel, mode)
+            if (callResult.isSuccess) {
+                val wasFallback = index > 0
+                val note = if (wasFallback) "মডেল ১ ব্যস্ত বা ত্রুটিযুক্ত থাকায় বিকল্প মডেল ($currentModel) ব্যবহৃত হয়েছে" else null
+                return Result.success(
+                    GeminiTransliterationOutput(
+                        convertedText = callResult.text,
+                        modelUsed = currentModel,
+                        wasFallbackUsed = wasFallback,
+                        fallbackNote = note
+                    )
+                )
+            }
+            lastErrorMsg = callResult.rawErrorMessage
+            lastHttpCode = callResult.httpCode
+            val shortErr = when {
+                callResult.isRateLimit -> "429 Rate Limit"
+                callResult.isHighDemand -> "503 High Demand"
+                callResult.httpCode > 0 -> "HTTP ${callResult.httpCode}"
+                else -> callResult.rawErrorMessage.take(30)
+            }
+            errorLogs.add("$currentModel ($shortErr)")
+        }
+
+        val cleanError = parseGeminiErrorMessage(lastErrorMsg, lastHttpCode, lastModelTried)
+        val combinedError = if (chain.size > 1) {
+            "$cleanError\n(ফলব্যাক চেইনে চেষ্টা করা মডেল: ${errorLogs.joinToString(", ")})"
+        } else {
+            cleanError
+        }
+        return Result.failure(Exception(combinedError))
+    }
+
+    /**
+     * Checks whether a specific Gemini model is operational, measures latency, and returns clear diagnostics.
+     */
+    suspend fun checkModelHealth(
+        customApiKey: String,
+        modelId: String,
+        roleLabel: String = ""
+    ): ModelHealthStatus = withContext(Dispatchers.IO) {
+        val startTime = System.currentTimeMillis()
+        val effectiveApiKey = when {
+            customApiKey.isNotBlank() -> customApiKey.trim()
+            try { BuildConfig.GEMINI_API_KEY.isNotBlank() } catch (_: Exception) { false } -> BuildConfig.GEMINI_API_KEY
+            else -> ""
+        }
+
+        if (effectiveApiKey.isBlank() || effectiveApiKey == "your_api_key_here") {
+            return@withContext ModelHealthStatus(
+                modelId = modelId,
+                roleLabel = roleLabel,
+                state = ModelHealthState.ERROR,
+                message = "API Key দেওয়া হয়নি। অনুগ্রহ করে আপনার Gemini API Key যুক্ত করুন।"
+            )
+        }
+
+        val testText = "Khawya suru korli naki abr??"
+        val callRes = executeSingleGeminiCall(testText, effectiveApiKey, modelId.trim())
+        val latency = System.currentTimeMillis() - startTime
+
+        if (callRes.isSuccess) {
+            ModelHealthStatus(
+                modelId = modelId,
+                roleLabel = roleLabel,
+                state = ModelHealthState.ACTIVE,
+                latencyMs = latency,
+                convertedSample = callRes.text,
+                message = "✓ সচল (${latency}ms) — রূপান্তর: \"${callRes.text}\""
+            )
+        } else if (callRes.isRateLimit) {
+            ModelHealthStatus(
+                modelId = modelId,
+                roleLabel = roleLabel,
+                state = ModelHealthState.RATE_LIMITED,
+                latencyMs = latency,
+                message = "⚠️ কোটা/রেট লিমিট শেষ (429 Rate Limit)"
+            )
+        } else if (callRes.isHighDemand) {
+            ModelHealthStatus(
+                modelId = modelId,
+                roleLabel = roleLabel,
+                state = ModelHealthState.HIGH_DEMAND,
+                latencyMs = latency,
+                message = "⚠️ গুগল সার্ভার ব্যস্ত (503 High Demand)"
+            )
+        } else {
+            val cleanErr = parseGeminiErrorMessage(callRes.rawErrorMessage, callRes.httpCode, modelId)
+            ModelHealthStatus(
+                modelId = modelId,
+                roleLabel = roleLabel,
+                state = ModelHealthState.ERROR,
+                latencyMs = latency,
+                message = cleanErr
+            )
+        }
     }
 
     /**
