@@ -337,6 +337,8 @@ object LipiOnlineEngine {
                 Provider.GOOGLE_INPUT_TOOLS -> transliterateWithGoogleInputTools(trimmed)
                 Provider.GEMINI_AI -> transliterateWithGemini(trimmed, customGeminiApiKey, geminiModel, mode)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -413,9 +415,13 @@ object LipiOnlineEngine {
                         feedbackMessage = "Gemini AI স্মার্ট ইঞ্জিন সফল!"
                     )
                 } else {
+                    val exc = geminiRes.exceptionOrNull()
+                    if (exc is kotlinx.coroutines.CancellationException) {
+                        throw exc
+                    }
                     // Seamless fallback to offline dictionary and phonetic engine
                     val offlineText = runOffline()
-                    val errorDetail = geminiRes.exceptionOrNull()?.message ?: "ইন্টারনেট/এআই সংযোগ পাওয়া যায়নি"
+                    val errorDetail = exc?.message ?: "ইন্টারনেট/এআই সংযোগ পাওয়া যায়নি"
                     SmartTransliterationResult(
                         originalText = trimmed,
                         convertedText = offlineText,

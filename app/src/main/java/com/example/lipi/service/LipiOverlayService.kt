@@ -102,6 +102,9 @@ class LipiOverlayService : Service() {
     private var aiFeedbackLabelView: TextView? = null
     private var aiSwitchBtnView: TextView? = null
 
+    private var liveTypingRunnable: Runnable? = null
+    private var debouncedAiRunnable: Runnable? = null
+
     private var currentText: String = ""
     private var convertedBengali: String = ""
     private var lastObservedClipText: String = ""
@@ -1025,12 +1028,16 @@ class LipiOverlayService : Service() {
                         onComplete?.invoke(true)
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Silently handle cooperative cancellation (e.g., typing resumed, clear clicked, or popup closed)
+                // NEVER display "StandaloneCoroutine was cancelled" as an error to the user!
             } catch (e: Exception) {
-                if (activeTranslationText != null) {
+                val cleanMsg = e.message ?: "কানেকশন ব্যাহত"
+                if (!cleanMsg.contains("cancel", ignoreCase = true) && activeTranslationText != null) {
                     outputStatusLabelView?.text = "📱 অ্যাপ লজিক ফলাফল"
                     outputStatusLabelView?.setTextColor(0xFF8BA2A8.toInt())
                     aiFeedbackLabelView?.visibility = View.VISIBLE
-                    aiFeedbackLabelView?.text = "⚠️ ত্রুটি: ${e.message?.take(50) ?: "কানেকশন ব্যাহত"}"
+                    aiFeedbackLabelView?.text = "⚠️ ত্রুটি: ${cleanMsg.take(50)}"
                     aiFeedbackLabelView?.setTextColor(0xFFFFB74D.toInt())
                 }
                 onComplete?.invoke(false)
@@ -1445,43 +1452,59 @@ class LipiOverlayService : Service() {
         toggleBar.addView(btnBanglishToBengali)
         toggleBar.addView(btnBengaliToBanglish)
 
-        // Real-time transliteration as user types with immediate logic + debounced Gemini AI
-        var liveTypingRunnable: Runnable? = null
-        var debouncedAiRunnable: Runnable? = null
+        // Real-time transliteration as user types with immediate logic + paused Gemini AI on typing completion
         inputField.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 val input = s?.toString() ?: ""
                 currentText = input
+
+                // 1. Instantly stop any previous live typing runnables and scheduled AI network requests
                 liveTypingRunnable?.let { mainHandler.removeCallbacks(it) }
                 debouncedAiRunnable?.let { mainHandler.removeCallbacks(it) }
 
+                // 2. Cancel in-flight network/coroutine job immediately while typing so no network data is wasted or interrupted
+                currentTransliterationJob?.cancel()
+                currentTransliterationJob = null
+
                 if (input.isNotBlank()) {
-                    // 1. Instant local offline logic execution (0ms delay)
+                    // 3. Instant local app logic execution (immediate responsive feedback without network call)
                     liveTypingRunnable = Runnable {
                         val logicRes = processText(input)
                         lastAppLogicResult = logicRes
                         convertedBengali = logicRes
                         currentDisplaySource = "logic"
                         translationText.text = logicRes
-                        outputStatusLabel.text = "📱 অ্যাপ লজিক ফলাফল"
-                        outputStatusLabel.setTextColor(0xFF8BA2A8.toInt())
+                        if (getOnlineEngineMode() == OnlineEngineMode.GEMINI_AI) {
+                            outputStatusLabel.text = "📱 অ্যাপ লজিক (টাইপিং শেষে AI রূপান্তর হবে)"
+                            outputStatusLabel.setTextColor(0xFF8BA2A8.toInt())
+                            aiFeedbackLabel.visibility = View.VISIBLE
+                            aiFeedbackLabel.text = "✍️ টাইপিং থামলে Gemini AI রূপান্তর আনা হবে..."
+                            aiFeedbackLabel.setTextColor(0xFF8BA2A8.toInt())
+                        } else {
+                            outputStatusLabel.text = "📱 অ্যাপ লজিক ফলাফল"
+                            outputStatusLabel.setTextColor(0xFF8BA2A8.toInt())
+                        }
                         aiSwitchBtn.visibility = View.GONE
                     }
                     mainHandler.postDelayed(liveTypingRunnable!!, 35)
 
-                    // 2. Debounced auto-fetch from Gemini AI if selected in Settings
+                    // 4. Send data to Gemini ONLY after typing is completely finished (small pause ~1200ms)
                     if (getOnlineEngineMode() == OnlineEngineMode.GEMINI_AI) {
                         debouncedAiRunnable = Runnable {
-                            triggerGeminiTransliteration(input, force = false)
+                            val latest = inputField.text.toString().trim()
+                            if (latest.isNotBlank()) {
+                                triggerGeminiTransliteration(latest, force = false)
+                            }
                         }
-                        mainHandler.postDelayed(debouncedAiRunnable!!, 450)
+                        mainHandler.postDelayed(debouncedAiRunnable!!, 1200)
                     }
                 } else {
                     convertedBengali = ""
                     lastAppLogicResult = ""
                     lastGeminiResult = ""
                     currentTransliterationJob?.cancel()
+                    currentTransliterationJob = null
                     translationText.text = if (isReverseMode) "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..." else "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
                     outputStatusLabel.text = if (isReverseMode) "লিপি: বাংলা → বাংলিশ" else "লিপি: বাংলিশ → বাংলা"
                     outputStatusLabel.setTextColor(0xFF57DFCE.toInt())
@@ -1576,7 +1599,10 @@ class LipiOverlayService : Service() {
             }
             layoutParams = p
             setOnClickListener {
+                liveTypingRunnable?.let { mainHandler.removeCallbacks(it) }
+                debouncedAiRunnable?.let { mainHandler.removeCallbacks(it) }
                 currentTransliterationJob?.cancel()
+                currentTransliterationJob = null
                 inputField.setText("")
                 currentText = ""
                 convertedBengali = ""
@@ -1737,7 +1763,10 @@ class LipiOverlayService : Service() {
     }
 
     private fun dismissTranslationPopup() {
+        liveTypingRunnable?.let { mainHandler.removeCallbacks(it) }
+        debouncedAiRunnable?.let { mainHandler.removeCallbacks(it) }
         currentTransliterationJob?.cancel()
+        currentTransliterationJob = null
         activeInputField = null
         activeTranslationText = null
         outputStatusLabelView = null
