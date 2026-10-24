@@ -315,4 +315,123 @@ object MixedScriptTokenizer {
         }
         return banglishHits >= 1
     }
+
+    /**
+     * Checks whether a specific Latin/Banglish word token is already recognized in the wordbank
+     * (custom wordbook, V5 library, built-in lexicon, morphology, elongation, loanwords, or preserved English).
+     */
+    fun isWordInWordbank(
+        token: String,
+        customWordbook: Map<String, String>,
+        mode: LipiMode = LipiMode.BANGLISH_TO_BENGALI,
+        transliterationStyle: TransliterationStyle = TransliterationStyle.ALL_BENGALI
+    ): Boolean {
+        val lower = token.lowercase().trim()
+        if (lower.isBlank()) return true
+        val cleanLetters = lower.filter { it.isLetter() }
+        if (cleanLetters.isBlank()) return true
+
+        // 1. Exact Custom Wordbook match
+        if (customWordbook.containsKey(lower) || customWordbook.containsKey(cleanLetters)) return true
+
+        // 2. Preserved or standard English words
+        if (transliterationStyle == TransliterationStyle.PRESERVE_ENGLISH &&
+            (LipiDictionary.PRESERVED_ENGLISH_WORDS.contains(lower) ||
+             (LipiDictionary.STANDARD_ENGLISH_WORDS.contains(lower) && LipiDictionary.findWord(lower) == null)) &&
+            mode != LipiMode.BANGLISH_TO_BENGALI
+        ) {
+            return true
+        }
+
+        // 3. English loanword to Bengali
+        if (LipiDictionary.COMMON_ENGLISH_LOANWORDS_TO_BENGALI.containsKey(lower) ||
+            LipiDictionary.COMMON_ENGLISH_LOANWORDS_TO_BENGALI.containsKey(cleanLetters)
+        ) {
+            return true
+        }
+
+        // 4. Exact built-in lexicon match or V5 expanded library
+        if (LipiDictionary.findWord(lower) != null || LipiDictionary.findWord(cleanLetters) != null) {
+            return true
+        }
+
+        // 5. Elongation or morphology rules
+        if (LipiDictionary.findWordWithElongation(lower) != null || LipiDictionary.findWordWithMorphology(lower) != null) {
+            return true
+        }
+
+        val elongatedCandidate = TextNormalizer.normalizeElongatedWord(lower, customWordbook, LipiDictionary.BANGLISH_LEXICON)
+        if (elongatedCandidate != null) {
+            if (customWordbook.containsKey(elongatedCandidate) || LipiDictionary.findWord(elongatedCandidate) != null) {
+                return true
+            }
+        }
+
+        // 6. Time formatting (e.g. 5pm)
+        if (LipiDictionary.formatBengaliTime(lower) != null) {
+            return true
+        }
+
+        return false
+    }
+
+    /**
+     * Identifies all Latin/Banglish word tokens in the input text that are NOT present in the wordbank.
+     * If this list is empty, ALL input words are already in the wordbank and no Gemini call is needed.
+     */
+    fun identifyUnknownWords(
+        inputText: String,
+        customWordbook: Map<String, String>,
+        mode: LipiMode = LipiMode.BANGLISH_TO_BENGALI,
+        transliterationStyle: TransliterationStyle = TransliterationStyle.ALL_BENGALI
+    ): List<String> {
+        if (inputText.isBlank()) return emptyList()
+        if (mode == LipiMode.SPELL_DOCTOR) return emptyList()
+
+        if (mode == LipiMode.BENGALI_TO_BANGLISH) {
+            // For Bengali to Banglish, find Bengali words not in BENGALI_TO_BANGLISH_MAP or customWordbook
+            val matches = TOKEN_SPLIT_REGEX.findAll(inputText)
+            val unknowns = mutableListOf<String>()
+            for (m in matches) {
+                val t = m.value.trim()
+                if (t.any { it in '\u0980'..'\u09FF' }) {
+                    val cleanBn = t.trim(',', '.', '?', '!', '।', ';', ':', '"', '\'', '‘', '’', '“', '”', ' ')
+                    if (cleanBn.length >= 2 && !customWordbook.values.contains(cleanBn) && !LipiDictionary.BENGALI_TO_BANGLISH_MAP.containsKey(cleanBn)) {
+                        unknowns.add(cleanBn)
+                    }
+                }
+            }
+            return unknowns.distinct()
+        }
+
+        if (mode == LipiMode.SMART_AUTO && transliterationStyle == TransliterationStyle.PRESERVE_ENGLISH && isPredominantlyEnglish(inputText)) {
+            return emptyList()
+        }
+
+        // Pre-normalize and check phrases
+        var stageText = TextNormalizer.preNormalize(inputText)
+        if (transliterationStyle == TransliterationStyle.ALL_BENGALI) {
+            stageText = TIME_REGEX.replace(stageText) { matchResult ->
+                LipiDictionary.formatBengaliTime(matchResult.value) ?: matchResult.value
+            }
+        }
+        if (stageText.contains(' ')) {
+            stageText = LipiDictionary.replacePhrases(stageText)
+        }
+
+        val unknownWords = mutableListOf<String>()
+        val matches = TOKEN_SPLIT_REGEX.findAll(stageText)
+        for (match in matches) {
+            val rawToken = match.value
+            if (rawToken.any { it.isLetter() } && !BENGALI_CHAR_RANGE.containsMatchIn(rawToken) && !TextNormalizer.isProtectedToken(rawToken)) {
+                val cleanWord = rawToken.filter { it.isLetter() }.lowercase()
+                if (cleanWord.length >= 2) {
+                    if (!isWordInWordbank(cleanWord, customWordbook, mode, transliterationStyle)) {
+                        unknownWords.add(cleanWord)
+                    }
+                }
+            }
+        }
+        return unknownWords.distinct()
+    }
 }

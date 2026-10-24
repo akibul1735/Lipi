@@ -965,4 +965,186 @@ object LipiOnlineEngine {
             message = cleanError
         )
     }
+
+    data class UnknownWordsLoadResult(
+        val wordMappings: Map<String, String>,
+        val modelUsed: String = "",
+        val rawResponse: String = ""
+    )
+
+    /**
+     * Translates ONLY the unknown/missing Banglish words using Gemini AI, in the context of the sentence.
+     * Returns the exact (banglish -> authentic Bengali) word mappings.
+     */
+    suspend fun fetchUnknownWordsFromGemini(
+        words: List<String>,
+        contextSentence: String,
+        customApiKey: String = "",
+        model: String = "gemini-3.8-flash",
+        modelsChain: List<String> = emptyList()
+    ): Result<UnknownWordsLoadResult> = withContext(Dispatchers.IO) {
+        if (words.isEmpty()) {
+            return@withContext Result.success(UnknownWordsLoadResult(emptyMap()))
+        }
+
+        val effectiveApiKey = when {
+            customApiKey.isNotBlank() -> customApiKey.trim()
+            try { BuildConfig.GEMINI_API_KEY.isNotBlank() } catch (_: Exception) { false } -> BuildConfig.GEMINI_API_KEY
+            else -> ""
+        }
+
+        if (effectiveApiKey.isBlank() || effectiveApiKey == "your_api_key_here") {
+            return@withContext Result.failure(Exception("Gemini API Key পাওয়া যায়নি। সেটিংসে API Key দিন।"))
+        }
+
+        val wordsListStr = words.distinct().joinToString("\n") { "- $it" }
+        val prompt = "You are Lipi, an expert Banglish to Bengali transliteration and dictionary engine.\n" +
+                "Translate the following unknown Banglish word(s) into authentic, natural conversational Bengali script.\n" +
+                "Full sentence context: \"$contextSentence\"\n\n" +
+                "Words to convert:\n$wordsListStr\n\n" +
+                "Provide the translation for each word. Respond ONLY with valid JSON in this exact structure, with no markdown code blocks or other text:\n" +
+                "[\n" +
+                words.distinct().take(2).joinToString(",\n") { "  {\"banglish\": \"$it\", \"bengali\": \"...\"}" } + "\n" +
+                "]"
+
+        val chain = mutableListOf<String>()
+        if (modelsChain.isNotEmpty()) {
+            modelsChain.forEach { m ->
+                val clean = m.trim()
+                if (clean.isNotEmpty() && !chain.contains(clean)) chain.add(clean)
+            }
+        }
+        if (chain.isEmpty()) {
+            val chosen = model.trim().ifEmpty { "gemini-3.8-flash" }
+            chain.add(chosen)
+            val fb = getFallbackModel(chosen)
+            if (!chain.contains(fb)) chain.add(fb)
+        }
+
+        var lastError = ""
+        for (currentModel in chain) {
+            val callResult = executeSingleGeminiCall(
+                text = prompt,
+                effectiveApiKey = effectiveApiKey,
+                model = currentModel,
+                mode = LipiMode.BANGLISH_TO_BENGALI
+            )
+            if (callResult.isSuccess) {
+                val mappings = parseWordMappings(callResult.text, words)
+                if (mappings.isNotEmpty()) {
+                    return@withContext Result.success(
+                        UnknownWordsLoadResult(
+                            wordMappings = mappings,
+                            modelUsed = currentModel,
+                            rawResponse = callResult.text
+                        )
+                    )
+                }
+            } else {
+                lastError = callResult.rawErrorMessage
+            }
+        }
+
+        Result.failure(Exception("Gemini থেকে নতুন শব্দ লোড করা যায়নি: $lastError"))
+    }
+
+    fun parseWordMappings(rawText: String, requestedWords: List<String>): Map<String, String> {
+        val map = mutableMapOf<String, String>()
+        val trimmed = rawText.trim()
+
+        // 1. Regex JSON extraction (zero runtime dependency, works identically on Android device and host JVM test runner)
+        val jsonPattern = Regex(""""banglish"\s*:\s*"([^"]+)"\s*,\s*"bengali"\s*:\s*"([^"]+)"""", RegexOption.IGNORE_CASE)
+        val jsonPatternReverse = Regex(""""bengali"\s*:\s*"([^"]+)"\s*,\s*"banglish"\s*:\s*"([^"]+)"""", RegexOption.IGNORE_CASE)
+
+        for (match in jsonPattern.findAll(trimmed)) {
+            val banglish = match.groupValues[1].lowercase().trim()
+            val bengali = match.groupValues[2].trim()
+            if (banglish.isNotBlank() && bengali.any { it in '\u0980'..'\u09FF' }) {
+                map[banglish] = bengali
+            }
+        }
+        for (match in jsonPatternReverse.findAll(trimmed)) {
+            val bengali = match.groupValues[1].trim()
+            val banglish = match.groupValues[2].lowercase().trim()
+            if (banglish.isNotBlank() && bengali.any { it in '\u0980'..'\u09FF' }) {
+                map[banglish] = bengali
+            }
+        }
+
+        if (map.isNotEmpty()) return map
+
+        // 2. Try org.json parsing as backup
+        try {
+            val jsonClean = trimmed
+                .replace(Regex("""^```(?:json)?\s*""", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("""\s*```$"""), "")
+                .trim()
+
+            if (jsonClean.startsWith("[") && jsonClean.endsWith("]")) {
+                val array = JSONArray(jsonClean)
+                for (i in 0 until array.length()) {
+                    val obj = array.optJSONObject(i)
+                    if (obj != null) {
+                        val banglish = obj.optString("banglish", "").lowercase().trim()
+                        val bengali = obj.optString("bengali", "").trim()
+                        if (banglish.isNotBlank() && bengali.any { it in '\u0980'..'\u09FF' }) {
+                            map[banglish] = bengali
+                        }
+                    }
+                }
+            } else if (jsonClean.startsWith("{") && jsonClean.endsWith("}")) {
+                val obj = JSONObject(jsonClean)
+                val array = obj.optJSONArray("mappings") ?: obj.optJSONArray("words")
+                if (array != null) {
+                    for (i in 0 until array.length()) {
+                        val item = array.optJSONObject(i)
+                        if (item != null) {
+                            val banglish = item.optString("banglish", "").lowercase().trim()
+                            val bengali = item.optString("bengali", "").trim()
+                            if (banglish.isNotBlank() && bengali.any { it in '\u0980'..'\u09FF' }) {
+                                map[banglish] = bengali
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        if (map.isNotEmpty()) return map
+
+        // 2. Line by line parsing: "clg=কলেজ", "clg: কলেজ", "clg -> কলেজ"
+        val lines = trimmed.lines()
+        for (line in lines) {
+            val l = line.trim().removePrefix("-").removePrefix("*").trim()
+            val delimiter = when {
+                l.contains("=") -> "="
+                l.contains("->") -> "->"
+                l.contains(":") -> ":"
+                l.contains("\t") -> "\t"
+                else -> null
+            }
+            if (delimiter != null) {
+                val parts = l.split(delimiter, limit = 2)
+                if (parts.size == 2) {
+                    val banglish = parts[0].trim().filter { it.isLetter() }.lowercase()
+                    val bengali = parts[1].trim(',', '.', '?', '!', '।', ';', ':', '"', '\'', '‘', '’', '“', '”', ' ')
+                    if (banglish.isNotBlank() && bengali.any { it in '\u0980'..'\u09FF' }) {
+                        map[banglish] = bengali
+                    }
+                }
+            }
+        }
+
+        // 3. Single word request fallback: e.g. "কলেজ"
+        if (map.isEmpty() && requestedWords.size == 1) {
+            val singleWord = requestedWords[0].lowercase().filter { it.isLetter() }
+            val firstBengaliToken = trimmed.split(Regex("""\s+""")).firstOrNull { it.any { c -> c in '\u0980'..'\u09FF' } }
+            if (!firstBengaliToken.isNullOrBlank()) {
+                val cleanBn = firstBengaliToken.trim(',', '.', '?', '!', '।', ';', ':', '"', '\'', '‘', '’', '“', '”', ' ')
+                map[singleWord] = cleanBn
+            }
+        }
+
+        return map
+    }
 }

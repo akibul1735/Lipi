@@ -107,6 +107,40 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
         MixedScriptTokenizer.process(_inputText.value, _selectedMode.value)
     )
 
+    val unknownWords: StateFlow<List<String>> = combine(
+        _inputText,
+        _selectedMode,
+        customWordbookMap,
+        transliterationStyle
+    ) { text, mode, wordMap, style ->
+        MixedScriptTokenizer.identifyUnknownWords(
+            inputText = text,
+            customWordbook = wordMap,
+            mode = mode,
+            transliterationStyle = style
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        emptyList()
+    )
+
+    val allWordsInWordbank: StateFlow<Boolean> = unknownWords
+        .map { it.isEmpty() }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            true
+        )
+
+    private val _isAutoLoadingUnknownWords = MutableStateFlow(false)
+    val isAutoLoadingUnknownWords: StateFlow<Boolean> = _isAutoLoadingUnknownWords.asStateFlow()
+
+    private val _wordbankSyncFeedback = MutableStateFlow<String?>(null)
+    val wordbankSyncFeedback: StateFlow<String?> = _wordbankSyncFeedback.asStateFlow()
+
+    private var autoLoadJob: kotlinx.coroutines.Job? = null
+
     fun setTransliterationStyle(style: TransliterationStyle) {
         repository.setTransliterationStyle(style)
     }
@@ -115,6 +149,69 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
         _inputText.value = text
         _onlineRefinedResult.value = null
         _onlineFeedback.value = null
+        _wordbankSyncFeedback.value = null
+
+        autoLoadJob?.cancel()
+        if (text.isNotBlank()) {
+            autoLoadJob = viewModelScope.launch {
+                kotlinx.coroutines.delay(650)
+                triggerAutoLoadUnknownWords(text)
+            }
+        }
+    }
+
+    fun triggerAutoLoadUnknownWords(input: String? = null) {
+        val textToProcess = input ?: _inputText.value
+        if (textToProcess.isBlank()) return
+
+        val words = MixedScriptTokenizer.identifyUnknownWords(
+            inputText = textToProcess,
+            customWordbook = customWordbookMap.value,
+            mode = _selectedMode.value,
+            transliterationStyle = transliterationStyle.value
+        )
+
+        // Rule: If all words in the input are already in the wordbank, do not load from Gemini!
+        if (words.isEmpty()) {
+            _wordbankSyncFeedback.value = "✓ সব শব্দ শব্দভাণ্ডারে সংরক্ষিত (Gemini লোডের প্রয়োজন নেই)"
+            return
+        }
+
+        // Rule: Only the unknown words will be loaded from Gemini!
+        val hasKey = repository.geminiApiKey.value.isNotBlank() ||
+                (try { com.example.BuildConfig.GEMINI_API_KEY.isNotBlank() } catch (_: Exception) { false })
+
+        if (!hasKey) {
+            _wordbankSyncFeedback.value = "শব্দভাণ্ডারে অনুপস্থিত শব্দ: ${words.joinToString(", ")} (Gemini থেকে অটো-লোডের জন্য API Key দিন)"
+            return
+        }
+
+        viewModelScope.launch {
+            _isAutoLoadingUnknownWords.value = true
+            _wordbankSyncFeedback.value = "Gemini থেকে নতুন শব্দ লোড করা হচ্ছে (${words.joinToString(", ")})..."
+
+            val chain = repository.getGeminiModelsChain()
+            val result = LipiOnlineEngine.fetchUnknownWordsFromGemini(
+                words = words,
+                contextSentence = textToProcess,
+                customApiKey = repository.geminiApiKey.value,
+                model = repository.geminiModel.value,
+                modelsChain = chain
+            )
+            _isAutoLoadingUnknownWords.value = false
+
+            result.onSuccess { res ->
+                val learned = repository.autoAddLearnedWords(res.wordMappings)
+                if (learned.isNotEmpty()) {
+                    val summary = learned.joinToString(", ") { "${it.first} → ${it.second}" }
+                    _wordbankSyncFeedback.value = "✓ Gemini থেকে নতুন শব্দ শব্দভাণ্ডারে যুক্ত হয়েছে: $summary"
+                } else {
+                    _wordbankSyncFeedback.value = "Gemini থেকে নতুন শব্দের উত্তর পাওয়া যায়নি"
+                }
+            }.onFailure { err ->
+                _wordbankSyncFeedback.value = "Gemini লোড ব্যর্থ: ${err.message ?: "ইন্টারনেট চেক করুন"}"
+            }
+        }
     }
 
     fun setOnlineEngineMode(mode: OnlineEngineMode) {
@@ -252,7 +349,8 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
                 val learned = repository.learnWordMappingFromGemini(currentInput, result.convertedText)
                 if (learned.isNotEmpty()) {
                     val learnedSummary = learned.joinToString(", ") { "${it.first} → ${it.second}" }
-                    _onlineFeedback.value = "${result.feedbackMessage ?: "Gemini AI সফল"} (শব্দকোষে সংরক্ষিত: $learnedSummary)"
+                    _onlineFeedback.value = "${result.feedbackMessage ?: "Gemini AI সফল"} (শব্দকোষে স্বয়ংক্রিয়ভাবে সংরক্ষিত: $learnedSummary)"
+                    _wordbankSyncFeedback.value = "✓ Gemini থেকে নতুন শব্দ শব্দভাণ্ডারে যুক্ত হয়েছে: $learnedSummary"
                 } else {
                     _onlineFeedback.value = result.feedbackMessage
                 }

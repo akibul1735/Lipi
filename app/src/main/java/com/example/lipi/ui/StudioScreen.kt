@@ -38,6 +38,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.ContentCopy
@@ -103,6 +104,10 @@ fun StudioScreen(
     val isOnlineTranslating by viewModel.isOnlineTranslating.collectAsState()
     val onlineFeedback by viewModel.onlineFeedback.collectAsState()
     val onlineRefinedResult by viewModel.onlineRefinedResult.collectAsState()
+    val unknownWords by viewModel.unknownWords.collectAsState()
+    val allWordsInWordbank by viewModel.allWordsInWordbank.collectAsState()
+    val isAutoLoadingUnknownWords by viewModel.isAutoLoadingUnknownWords.collectAsState()
+    val wordbankSyncFeedback by viewModel.wordbankSyncFeedback.collectAsState()
     val scrollState = rememberScrollState()
 
     val samplePhrases = listOf(
@@ -349,15 +354,20 @@ fun StudioScreen(
                     onValueChange = { viewModel.updateInput(it) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(130.dp)
+                        .height(145.dp)
                         .testTag("workbench_input_field"),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 16.sp,
+                        lineHeight = 24.sp
+                    ),
                     placeholder = {
                         Text(
                             text = when (selectedMode) {
                                 LipiMode.BENGALI_TO_BANGLISH -> "যেমন: আমি ভালো আছি, তুমি কেমন আছো? কালকে দেখা হবে..."
                                 LipiMode.SPELL_DOCTOR -> "যেমন: আমি ভাল আছি, কিন্তু তিনি উপস্থিত ছিলেন না..."
                                 else -> "যেমন: Ami valo asi, tumi kemon acho? Ajke 5pm e call dao..."
-                            }
+                            },
+                            fontSize = 15.sp
                         )
                     },
                     colors = OutlinedTextFieldDefaults.colors(
@@ -436,6 +446,10 @@ fun StudioScreen(
             isOnlineTranslating = isOnlineTranslating,
             onlineFeedback = onlineFeedback,
             onlineRefinedResult = onlineRefinedResult,
+            unknownWords = unknownWords,
+            allWordsInWordbank = allWordsInWordbank,
+            isAutoLoadingUnknownWords = isAutoLoadingUnknownWords,
+            wordbankSyncFeedback = wordbankSyncFeedback,
             onRefineOnline = { viewModel.refineWithOnlineApi() },
             onCopy = {
                 val textToCopy = onlineRefinedResult ?: currentResult.convertedText
@@ -541,6 +555,10 @@ fun OutputResultCard(
     isOnlineTranslating: Boolean,
     onlineFeedback: String?,
     onlineRefinedResult: String?,
+    unknownWords: List<String> = emptyList(),
+    allWordsInWordbank: Boolean = true,
+    isAutoLoadingUnknownWords: Boolean = false,
+    wordbankSyncFeedback: String? = null,
     onRefineOnline: () -> Unit,
     onCopy: () -> Unit,
     onShare: () -> Unit,
@@ -755,10 +773,111 @@ fun OutputResultCard(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Online Refine Action Button
+            // Intelligent Wordbank & Gemini Smart Status Banner
+            if (result.originalText.isNotBlank()) {
+                if (allWordsInWordbank) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = PadmaTealPrimary.copy(alpha = 0.08f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, PadmaTealPrimary.copy(alpha = 0.35f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = PadmaTealPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "✓ সব শব্দ শব্দভাণ্ডারে সংরক্ষিত আছে",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PadmaTealPrimary
+                                )
+                                Text(
+                                    text = "শব্দভাণ্ডার থেকে তাৎক্ষণিক ফলাফল তৈরি হয়েছে। Gemini থেকে অতিরিক্ত লোড করার প্রয়োজন নেই।",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                } else if (unknownWords.isNotEmpty()) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.35f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isAutoLoadingUnknownWords) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = if (isAutoLoadingUnknownWords)
+                                        "Gemini থেকে নতুন শব্দ লোড হচ্ছে..."
+                                    else
+                                        "শব্দভাণ্ডারে অনুপস্থিত শব্দ: ${unknownWords.joinToString(", ")}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                                Text(
+                                    text = "অনুপস্থিত শব্দগুলো Gemini থেকে স্বয়ংক্রিয়ভাবে লোড হয়ে সরাসরি শব্দভাণ্ডারে যুক্ত হচ্ছে।",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (wordbankSyncFeedback != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = PadmaTealPrimary.copy(alpha = 0.12f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = wordbankSyncFeedback,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = PadmaTealPrimary,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            // Online Refine / Load Action Button
             OutlinedButton(
                 onClick = onRefineOnline,
-                enabled = !isOnlineTranslating && result.originalText.isNotBlank(),
+                enabled = !isOnlineTranslating && !isAutoLoadingUnknownWords && result.originalText.isNotBlank(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("refine_online_button"),
@@ -781,10 +900,17 @@ fun OutputResultCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = when (onlineEngineMode) {
-                            OnlineEngineMode.GEMINI_AI -> "Gemini AI দিয়ে রিফাইন করুন"
-                            OnlineEngineMode.ONLINE_CLOUD -> "Google ক্লাউড API দিয়ে রিফাইন করুন"
-                            else -> "অনলাইন ক্লাউড API দিয়ে রিফাইন করুন"
+                        text = when {
+                            onlineEngineMode == OnlineEngineMode.GEMINI_AI && allWordsInWordbank ->
+                                "প্রয়োজনে Gemini দিয়ে সম্পূর্ণ বাক্য লোড করুন"
+                            onlineEngineMode == OnlineEngineMode.GEMINI_AI && !allWordsInWordbank && unknownWords.isNotEmpty() ->
+                                "Gemini দিয়ে নতুন শব্দ এখনই লোড করুন (${unknownWords.size}টি শব্দ)"
+                            onlineEngineMode == OnlineEngineMode.GEMINI_AI ->
+                                "Gemini AI দিয়ে সম্পূর্ণ বাক্য রিফাইন করুন"
+                            onlineEngineMode == OnlineEngineMode.ONLINE_CLOUD ->
+                                "Google ক্লাউড API দিয়ে রিফাইন করুন"
+                            else ->
+                                "অনলাইন ক্লাউড API দিয়ে রিফাইন করুন"
                         },
                         fontWeight = FontWeight.SemiBold
                     )

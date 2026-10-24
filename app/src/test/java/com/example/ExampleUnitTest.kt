@@ -207,4 +207,45 @@ class ExampleUnitTest {
         )
         assertEquals("আজকে কলেজ বন্ধ", result.convertedText)
     }
+
+    @Test
+    fun testIdentifyUnknownWordsWhenAllWordsInWordbank() {
+        // User requirement: "যদি সব শব্দই শব্দ ভান্ডারে থাকে তাহলে যেমিনি থেকে লোড করার প্রয়োজন নেই।"
+        val input = "Khawya suru korli naki abr"
+        val unknowns = MixedScriptTokenizer.identifyUnknownWords(input, emptyMap())
+        assertTrue("All words are known in wordbank, unknowns should be empty", unknowns.isEmpty())
+    }
+
+    @Test
+    fun testIdentifyUnknownWordsWhenWordIsMissing() {
+        // User requirement: "সেসব শব্দ থাকবে না শুধু সেগুলোই জেমিনি থেকে লোড করবে।"
+        val input = "Ami ajke clg jabo"
+        val unknowns = MixedScriptTokenizer.identifyUnknownWords(input, emptyMap())
+        assertEquals(listOf("clg"), unknowns)
+
+        // Now test once 'clg' is added to customWordbook, it is recognized as known
+        val updatedCustomMap = mapOf("clg" to "কলেজ")
+        val unknownsAfter = MixedScriptTokenizer.identifyUnknownWords(input, updatedCustomMap)
+        assertTrue("Once added to wordbook, unknowns should be empty", unknownsAfter.isEmpty())
+    }
+
+    @Test
+    fun testParseWordMappingsFromGemini() {
+        // Test JSON array response
+        val jsonResponse = """
+            [
+              {"banglish": "clg", "bengali": "কলেজ"},
+              {"banglish": "varsity", "bengali": "ভার্সিটি"}
+            ]
+        """.trimIndent()
+        val parsed = com.example.lipi.engine.LipiOnlineEngine.parseWordMappings(jsonResponse, listOf("clg", "varsity"))
+        assertEquals("কলেজ", parsed["clg"])
+        assertEquals("ভার্সিটি", parsed["varsity"])
+
+        // Test line-by-line response fallback
+        val lineResponse = "clg=কলেজ\nvarsity=ভার্সিটি"
+        val parsedLines = com.example.lipi.engine.LipiOnlineEngine.parseWordMappings(lineResponse, listOf("clg", "varsity"))
+        assertEquals("কলেজ", parsedLines["clg"])
+        assertEquals("ভার্সিটি", parsedLines["varsity"])
+    }
 }

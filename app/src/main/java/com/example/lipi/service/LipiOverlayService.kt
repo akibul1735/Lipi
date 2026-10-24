@@ -790,8 +790,8 @@ class LipiOverlayService : Service() {
         dismissQuickPreview()
 
         val displayMetrics = resources.displayMetrics
-        // 300dp width as requested by user
-        val targetWidthDp = 300
+        // Enlarged floating window width: 345dp
+        val targetWidthDp = 345
         val width = (targetWidthDp * displayMetrics.density).toInt().coerceAtMost((displayMetrics.widthPixels * 0.95f).toInt())
 
         val layoutParams = WindowManager.LayoutParams(
@@ -816,7 +816,7 @@ class LipiOverlayService : Service() {
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 20, 28, 20)
+            setPadding(30, 22, 30, 22)
             background = GradientDrawable().apply {
                 cornerRadius = 24f
                 setColor(0xFF0F1B20.toInt())
@@ -840,14 +840,14 @@ class LipiOverlayService : Service() {
         val title = TextView(this).apply {
             text = "📋 স্বয়ংক্রিয় বাংলা রূপান্তর:"
             setTextColor(0xFF57DFCE.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
             setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
 
         val closeBtn = TextView(this).apply {
             text = "✕"
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setPadding(8, 0, 8, 8)
             setOnClickListener { dismissQuickPreview() }
         }
@@ -858,16 +858,16 @@ class LipiOverlayService : Service() {
         val preview = TextView(this).apply {
             text = bengaliText
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16.5f)
             maxLines = 3
             ellipsize = TextUtils.TruncateAt.END
-            setPadding(0, 8, 0, 14)
+            setPadding(0, 10, 0, 14)
         }
 
         val copyActionBtn = Button(this).apply {
             text = "কপি করুন"
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
             background = GradientDrawable().apply {
                 cornerRadius = 16f
                 setColor(0xFFD86B43.toInt()) // Terracotta
@@ -957,6 +957,75 @@ class LipiOverlayService : Service() {
         }
 
         val engineMode = getOnlineEngineMode()
+        val targetMode = if (isReverseMode) LipiMode.BENGALI_TO_BANGLISH else LipiMode.BANGLISH_TO_BENGALI
+        val customKey = getGeminiApiKey()
+        val model = getGeminiModel()
+        val chain = repository.getGeminiModelsChain()
+        val convertDigits = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE).getBoolean("convert_digits", false)
+        val style = getTransliterationStyle()
+        val customWordMap = repository.customWordbook.value.associate { it.banglish.lowercase() to it.bengali }
+
+        val unknownWords = com.example.lipi.engine.MixedScriptTokenizer.identifyUnknownWords(trimmed, customWordMap, targetMode, style)
+
+        // Case 1: If all words in the input are already in the wordbank and user didn't force load:
+        if (!force && unknownWords.isEmpty()) {
+            outputStatusLabelView?.text = "📱 সব শব্দ শব্দভাণ্ডারে বিদ্যমান"
+            outputStatusLabelView?.setTextColor(0xFF81C784.toInt())
+            aiFeedbackLabelView?.visibility = View.VISIBLE
+            aiFeedbackLabelView?.text = "✓ শব্দভাণ্ডার থেকে তাৎক্ষণিক প্রদর্শিত (Gemini লোডের প্রয়োজন নেই)"
+            aiFeedbackLabelView?.setTextColor(0xFF81C784.toInt())
+            aiSwitchBtnView?.visibility = View.VISIBLE
+            aiSwitchBtnView?.text = "Gemini লোড"
+            onComplete?.invoke(true)
+            return
+        }
+
+        // Case 2: If there are unknown words and Gemini is active, only load those unknown words from Gemini!
+        val hasKey = customKey.isNotBlank() || (try { com.example.BuildConfig.GEMINI_API_KEY.isNotBlank() } catch (_: Exception) { false })
+        if (!force && unknownWords.isNotEmpty() && hasKey && engineMode == OnlineEngineMode.GEMINI_AI) {
+            currentTransliterationJob?.cancel()
+            outputStatusLabelView?.text = "🔍 ${unknownWords.size}টি শব্দ শব্দভাণ্ডারে নেই"
+            outputStatusLabelView?.setTextColor(0xFFFFD54F.toInt())
+            aiFeedbackLabelView?.visibility = View.VISIBLE
+            aiFeedbackLabelView?.text = "Gemini থেকে নতুন শব্দ লোড হচ্ছে (${unknownWords.joinToString(", ")})..."
+            aiFeedbackLabelView?.setTextColor(0xFF8BA2A8.toInt())
+
+            currentTransliterationJob = serviceScope.launch {
+                try {
+                    val res = com.example.lipi.engine.LipiOnlineEngine.fetchUnknownWordsFromGemini(
+                        words = unknownWords,
+                        contextSentence = trimmed,
+                        customApiKey = customKey,
+                        model = model,
+                        modelsChain = chain
+                    )
+                    res.onSuccess { data ->
+                        val learned = repository.autoAddLearnedWords(data.wordMappings)
+                        val newBengali = processText(trimmed)
+                        convertedBengali = newBengali
+                        lastGeminiResult = newBengali
+                        activeTranslationText?.text = newBengali
+                        outputStatusLabelView?.text = "✨ Gemini নতুন শব্দ যুক্ত সম্পন্ন"
+                        outputStatusLabelView?.setTextColor(0xFF57DFCE.toInt())
+                        val learnedStr = learned.joinToString(", ") { "${it.first} → ${it.second}" }
+                        aiFeedbackLabelView?.text = "✓ শব্দভাণ্ডারে অটো-যুক্ত: $learnedStr"
+                        aiFeedbackLabelView?.setTextColor(0xFF81C784.toInt())
+                        aiSwitchBtnView?.visibility = View.VISIBLE
+                        aiSwitchBtnView?.text = "লজিক দেখুন"
+                        onComplete?.invoke(true)
+                    }.onFailure {
+                        outputStatusLabelView?.text = "📱 অ্যাপ লজিক ফলাফল"
+                        aiFeedbackLabelView?.text = "⚠️ Gemini লোড করা যায়নি (অফলাইন লজিক সক্রিয়)"
+                        aiFeedbackLabelView?.setTextColor(0xFFFFB74D.toInt())
+                        onComplete?.invoke(false)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            return
+        }
+
         if (!force && engineMode == OnlineEngineMode.OFFLINE_ONLY) {
             outputStatusLabelView?.text = "📱 অ্যাপ লজিক ফলাফল"
             aiFeedbackLabelView?.visibility = View.GONE
@@ -969,14 +1038,6 @@ class LipiOverlayService : Service() {
         aiFeedbackLabelView?.visibility = View.VISIBLE
         aiFeedbackLabelView?.text = "Gemini ক্লাউড মডেল অনুসন্ধান করা হচ্ছে..."
         aiFeedbackLabelView?.setTextColor(0xFF8BA2A8.toInt())
-
-        val targetMode = if (isReverseMode) LipiMode.BENGALI_TO_BANGLISH else LipiMode.BANGLISH_TO_BENGALI
-        val customKey = getGeminiApiKey()
-        val model = getGeminiModel()
-        val chain = repository.getGeminiModelsChain()
-        val convertDigits = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE).getBoolean("convert_digits", false)
-        val style = getTransliterationStyle()
-        val customWordMap = repository.customWordbook.value.associate { it.banglish.lowercase() to it.bengali }
 
         currentTransliterationJob = serviceScope.launch {
             try {
@@ -1104,9 +1165,9 @@ class LipiOverlayService : Service() {
         }
 
         val displayMetrics = resources.displayMetrics
-        // Floating window width: 300dp as requested by user
-        val targetWidthDp = 300
-        val width = (targetWidthDp * displayMetrics.density).toInt().coerceAtMost((displayMetrics.widthPixels * 0.95f).toInt())
+        // Floating window width: 345dp (comfortably enlarged for better readability)
+        val targetWidthDp = 345
+        val width = (targetWidthDp * displayMetrics.density).toInt().coerceAtMost((displayMetrics.widthPixels * 0.94f).toInt())
 
         // Root overlay covering full screen to intercept outside touches and close the window
         val rootOverlay = FrameLayout(this).apply {
@@ -1128,7 +1189,7 @@ class LipiOverlayService : Service() {
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16, 12, 16, 12)
+            setPadding(18, 14, 18, 14)
             background = GradientDrawable().apply {
                 cornerRadius = 18f
                 setColor(0xFF0C1518.toInt()) // Deep surface
@@ -1137,7 +1198,7 @@ class LipiOverlayService : Service() {
             elevation = 16f
         }
 
-        // Intercept touches anywhere outside the 300dp dialog card to immediately close the window
+        // Intercept touches anywhere outside the dialog card to immediately close the window
         rootOverlay.setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_DOWN) {
                 val rect = android.graphics.Rect()
@@ -1160,8 +1221,8 @@ class LipiOverlayService : Service() {
             width,
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
-            leftMargin = targetLeft.coerceIn(16, displayMetrics.widthPixels - width - 16)
-            topMargin = (anchorY + 30).coerceIn(60, displayMetrics.heightPixels - 360)
+            leftMargin = targetLeft.coerceIn(12, displayMetrics.widthPixels - width - 12)
+            topMargin = (anchorY + 30).coerceIn(50, displayMetrics.heightPixels - 380)
         }
         container.layoutParams = cardLayoutParams
 
@@ -1173,7 +1234,7 @@ class LipiOverlayService : Service() {
         val title = TextView(this).apply {
             text = if (isReverseMode) "লিপি: বাংলা → বাংলিশ" else "লিপি: বাংলিশ → বাংলা"
             setTextColor(0xFF57DFCE.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.5f)
             setTypeface(null, android.graphics.Typeface.BOLD)
             setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
@@ -1187,8 +1248,8 @@ class LipiOverlayService : Service() {
                 else -> "📱 অফলাইন"
             }
             setTextColor(if (currentMode == OnlineEngineMode.GEMINI_AI) 0xFF57DFCE.toInt() else 0xFF8BA2A8.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
-            setPadding(8, 2, 8, 2)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(10, 3, 10, 3)
             background = GradientDrawable().apply {
                 cornerRadius = 8f
                 setColor(if (currentMode == OnlineEngineMode.GEMINI_AI) 0x3300A896.toInt() else 0x22FFFFFF)
@@ -1208,9 +1269,9 @@ class LipiOverlayService : Service() {
         val closeBtn = TextView(this).apply {
             text = "✕"
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             gravity = Gravity.CENTER
-            setPadding(12, 4, 12, 4)
+            setPadding(14, 5, 14, 5)
             background = GradientDrawable().apply {
                 cornerRadius = 10f
                 setColor(0x25FFFFFF)
@@ -1222,13 +1283,13 @@ class LipiOverlayService : Service() {
         headerRow.addView(engineBadge)
         headerRow.addView(closeBtn)
 
-        // Editable Input Field for writing or pasting (compact height)
+        // Editable Input Field for writing or pasting (comfortably sized)
         val inputField = EditText(this).apply {
             hint = if (isReverseMode) "বাংলা লিখুন বা পেস্ট..." else "বাংলিশ লিখুন বা পেস্ট..."
             setHintTextColor(0xFF888888.toInt())
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setPadding(12, 8, 12, 8)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.5f)
+            setPadding(14, 10, 14, 10)
             minLines = 1
             maxLines = 3
             background = GradientDrawable().apply {
@@ -1268,7 +1329,7 @@ class LipiOverlayService : Service() {
                 else -> "📱 অ্যাপ লজিক রূপান্তর"
             }
             setTextColor(0xFF57DFCE.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setTypeface(null, android.graphics.Typeface.BOLD)
             setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
@@ -1277,9 +1338,9 @@ class LipiOverlayService : Service() {
         val aiSwitchBtn = TextView(this).apply {
             text = "লজিক দেখুন"
             setTextColor(0xFF8BA2A8.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             visibility = View.GONE
-            setPadding(8, 2, 8, 2)
+            setPadding(10, 3, 10, 3)
             background = GradientDrawable().apply {
                 cornerRadius = 6f
                 setColor(0x20FFFFFF)
@@ -1303,9 +1364,9 @@ class LipiOverlayService : Service() {
             else
                 "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
             setTextColor(0xFF57DFCE.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setLineSpacing(3f, 1.15f)
-            setPadding(12, 8, 12, 8)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15.5f)
+            setLineSpacing(4f, 1.2f)
+            setPadding(14, 10, 14, 10)
             background = GradientDrawable().apply {
                 cornerRadius = 10f
                 setColor(0xFF0F1E22.toInt())
@@ -1347,7 +1408,7 @@ class LipiOverlayService : Service() {
             val mode = getOnlineEngineMode()
             text = if (mode == OnlineEngineMode.GEMINI_AI) "Gemini AI স্মার্ট ইঞ্জিন প্রস্তুত" else ""
             setTextColor(0xFF8BA2A8.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
             visibility = if (mode == OnlineEngineMode.GEMINI_AI) View.VISIBLE else View.GONE
             setPadding(2, 0, 2, 6)
         }
@@ -1373,17 +1434,17 @@ class LipiOverlayService : Service() {
 
         val btnBanglishToBengali = TextView(this).apply {
             text = "বাংলিশ → বাংলা"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             gravity = Gravity.CENTER
-            setPadding(4, 6, 4, 6)
+            setPadding(4, 7, 4, 7)
             setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
 
         val btnBengaliToBanglish = TextView(this).apply {
             text = "বাংলা → বাংলিশ"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             gravity = Gravity.CENTER
-            setPadding(4, 6, 4, 6)
+            setPadding(4, 7, 4, 7)
             setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
 
@@ -1544,12 +1605,12 @@ class LipiOverlayService : Service() {
             layoutParams = params
         }
 
-        val btnHeight = (36 * displayMetrics.density).toInt()
+        val btnHeight = (40 * displayMetrics.density).toInt()
 
         // 1. Paste Button ("পেস্ট")
         val pasteBtn = Button(this).apply {
             text = "পেস্ট"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
             setTextColor(Color.WHITE)
             setPadding(2, 0, 2, 0)
             background = GradientDrawable().apply {
@@ -1603,7 +1664,7 @@ class LipiOverlayService : Service() {
         // 2. Clear / Erase Button ("মুছুন")
         val clearBtn = Button(this).apply {
             text = "মুছুন"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
             setTextColor(0xFFFFCDD2.toInt())
             setPadding(2, 0, 2, 0)
             background = GradientDrawable().apply {
@@ -1640,7 +1701,7 @@ class LipiOverlayService : Service() {
         // 3. AI Refine Button ("✨ এআই")
         val aiRefineBtn = Button(this).apply {
             text = "✨ এআই"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
             setTextColor(Color.WHITE)
             setTypeface(null, android.graphics.Typeface.BOLD)
             setPadding(2, 0, 2, 0)
@@ -1666,7 +1727,7 @@ class LipiOverlayService : Service() {
         // 4. Copy Button ("কপি")
         val copyBtn = Button(this).apply {
             text = "কপি"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
             setTextColor(Color.WHITE)
             setPadding(2, 0, 2, 0)
             background = GradientDrawable().apply {

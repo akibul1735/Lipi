@@ -256,26 +256,70 @@ class LipiRepository(private val context: Context) {
         val inTokens = inClean.split(Regex("\\s+")).filter { it.isNotBlank() }
         val outTokens = outClean.split(Regex("\\s+")).filter { it.isNotBlank() }
 
+        val currentWordMap = _customWordbook.value.associate { it.banglish.lowercase() to it.bengali }
+        val unknowns = com.example.lipi.engine.MixedScriptTokenizer.identifyUnknownWords(inClean, currentWordMap)
+
         // Case 1: Single-word or slang input (e.g. "clg" -> "কলেজ", "varsity" -> "ভার্সিটি", "dept" -> "ডিপার্টমেন্ট")
         if (inTokens.size == 1 && outTokens.size == 1) {
             val banglish = inTokens[0].filter { it.isLetter() }.lowercase()
-            val bengali = outTokens[0].trim(',', '.', '?', '!', '।', ';', ':', '"', '\'', '‘', '’', '“', '”')
+            val bengali = outTokens[0].trim(',', '.', '?', '!', '।', ';', ':', '"', '\'', '‘', '’', '“', '”', ' ')
             if (banglish.length >= 2 && bengali.any { it in '\u0980'..'\u09FF' }) {
-                addWordbookEntry(banglish, bengali, "Gemini এআই লার্নিং")
+                addWordbookEntry(banglish, bengali, "Gemini অটো-যুক্ত")
                 learned.add(Pair(banglish, bengali))
             }
-        } else if (inTokens.size == outTokens.size && inTokens.size in 2..15) {
-            // Case 2: 1-to-1 word correspondence in sentences (e.g. "ajke clg jabo" -> "আজকে কলেজ যাবো")
+        } else if (unknowns.size == 1) {
+            // Case 2: Exactly 1 unknown word in a sentence (e.g. "Ami ajke clg jabo" -> "আজকে আমি কলেজ যাবো")
+            val unk = unknowns[0]
+            val indexIn = inTokens.indexOfFirst { it.filter { c -> c.isLetter() }.equals(unk, ignoreCase = true) }
+            if (indexIn in outTokens.indices) {
+                val candidateBn = outTokens[indexIn].trim(',', '.', '?', '!', '।', ';', ':', '"', '\'', '‘', '’', '“', '”', ' ')
+                if (candidateBn.any { it in '\u0980'..'\u09FF' }) {
+                    addWordbookEntry(unk, candidateBn, "Gemini অটো-যুক্ত")
+                    learned.add(Pair(unk, candidateBn))
+                }
+            } else {
+                val candidateTokens = outTokens.map { it.trim(',', '.', '?', '!', '।', ';', ':', '"', '\'', '‘', '’', '“', '”', ' ') }
+                    .filter { bn -> bn.any { it in '\u0980'..'\u09FF' } }
+                for (cand in candidateTokens) {
+                    val isKnownMatch = inTokens.any { inT ->
+                        val cleanIn = inT.filter { it.isLetter() }.lowercase()
+                        cleanIn != unk && (LipiDictionary.findWord(cleanIn) == cand || currentWordMap[cleanIn] == cand)
+                    }
+                    if (!isKnownMatch) {
+                        addWordbookEntry(unk, cand, "Gemini অটো-যুক্ত")
+                        learned.add(Pair(unk, cand))
+                        break
+                    }
+                }
+            }
+        } else if (inTokens.size == outTokens.size && inTokens.size in 2..20) {
+            // Case 3: 1-to-1 word correspondence in sentences (e.g. "ajke clg jabo" -> "আজকে কলেজ যাবো")
             for (i in inTokens.indices) {
                 val rawIn = inTokens[i].filter { it.isLetter() }.lowercase()
-                val rawOut = outTokens[i].trim(',', '.', '?', '!', '।', ';', ':', '"', '\'', '‘', '’', '“', '”')
+                val rawOut = outTokens[i].trim(',', '.', '?', '!', '।', ';', ':', '"', '\'', '‘', '’', '“', '”', ' ')
                 if (rawIn.length >= 2 && rawOut.any { it in '\u0980'..'\u09FF' }) {
-                    val existing = _customWordbook.value.find { it.banglish.equals(rawIn, ignoreCase = true) }
-                    if (existing == null || existing.bengali != rawOut) {
-                        addWordbookEntry(rawIn, rawOut, "Gemini এআই লার্নিং")
+                    val isAlreadyKnown = LipiDictionary.findWord(rawIn) != null || currentWordMap[rawIn] == rawOut
+                    if (!isAlreadyKnown || unknowns.contains(rawIn)) {
+                        addWordbookEntry(rawIn, rawOut, "Gemini অটো-যুক্ত")
                         learned.add(Pair(rawIn, rawOut))
                     }
                 }
+            }
+        }
+        return learned
+    }
+
+    /**
+     * Batch auto-adds learned word mappings into the custom wordbook and saves them permanently.
+     */
+    fun autoAddLearnedWords(mappings: Map<String, String>): List<Pair<String, String>> {
+        val learned = mutableListOf<Pair<String, String>>()
+        for ((rawBanglish, rawBengali) in mappings) {
+            val banglish = rawBanglish.trim().lowercase().filter { it.isLetter() }
+            val bengali = rawBengali.trim(',', '.', '?', '!', '।', ';', ':', '"', '\'', '‘', '’', '“', '”', ' ')
+            if (banglish.length >= 2 && bengali.any { it in '\u0980'..'\u09FF' }) {
+                addWordbookEntry(banglish, bengali, "Gemini অটো-যুক্ত")
+                learned.add(Pair(banglish, bengali))
             }
         }
         return learned
