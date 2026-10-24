@@ -17,10 +17,16 @@ import android.text.Editable
 import android.text.TextUtils
 import android.text.TextWatcher
 import android.util.TypedValue
+import android.animation.ValueAnimator
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.view.HapticFeedbackConstants
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -67,6 +73,9 @@ class LipiOverlayService : Service() {
     private var translationPopupView: View? = null
     private var quickPreviewView: View? = null
     private var quickPreviewDismissRunnable: Runnable? = null
+    private var dismissTargetView: View? = null
+    private var isDismissTargetShowing: Boolean = false
+    private var isBallHoveringDismiss: Boolean = false
 
     private var activeInputField: EditText? = null
     private var activeTranslationText: TextView? = null
@@ -370,13 +379,17 @@ class LipiOverlayService : Service() {
             addView(dot, dotParams)
         }
 
-        // Draggable touch listener
+        // Draggable touch listener with bottom dismiss target on hold / drag
         badge.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
             private var initialTouchX = 0f
             private var initialTouchY = 0f
             private var isClick = false
+            private val holdHandler = Handler(Looper.getMainLooper())
+            private val showTargetRunnable = Runnable {
+                showDismissTarget()
+            }
 
             override fun onTouch(v: View?, event: MotionEvent?): Boolean {
                 if (event == null) return false
@@ -387,16 +400,49 @@ class LipiOverlayService : Service() {
                         initialTouchX = event.rawX
                         initialTouchY = event.rawY
                         isClick = true
+
+                        // If user holds the ball (250ms), show the bottom close icon
+                        holdHandler.postDelayed(showTargetRunnable, 250)
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
                         val dx = (event.rawX - initialTouchX).toInt()
                         val dy = (event.rawY - initialTouchY).toInt()
-                        if (Math.abs(dx) > 12 || Math.abs(dy) > 12) {
-                            isClick = false
+                        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                            if (isClick) {
+                                isClick = false
+                                holdHandler.removeCallbacks(showTargetRunnable)
+                                showDismissTarget()
+                            }
                         }
+
                         layoutParams.x = initialX + dx
                         layoutParams.y = initialY + dy
+
+                        // Calculate collision with bottom dismiss target
+                        val screenWidth = displayMetrics.widthPixels
+                        val screenHeight = displayMetrics.heightPixels
+                        val density = displayMetrics.density
+                        val targetCenterX = screenWidth / 2f
+                        val targetCenterY = screenHeight - (60 * density)
+                        val triggerRadius = (70 * density)
+
+                        val badgeCenterX = layoutParams.x + dpSize / 2f
+                        val badgeCenterY = layoutParams.y + dpSize / 2f
+                        val distance = Math.hypot(
+                            (badgeCenterX - targetCenterX).toDouble(),
+                            (badgeCenterY - targetCenterY).toDouble()
+                        )
+
+                        val isHovering = distance <= triggerRadius
+                        updateDismissTargetHover(isHovering, badge)
+
+                        if (isHovering) {
+                            // Magnetically capture badge into close target center
+                            layoutParams.x = (targetCenterX - dpSize / 2).toInt()
+                            layoutParams.y = (targetCenterY - dpSize / 2 - (12 * density)).toInt()
+                        }
+
                         try {
                             windowManager?.updateViewLayout(badge, layoutParams)
                         } catch (e: Exception) {
@@ -404,25 +450,54 @@ class LipiOverlayService : Service() {
                         }
                         return true
                     }
-                    MotionEvent.ACTION_UP -> {
-                        if (isClick) {
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        holdHandler.removeCallbacks(showTargetRunnable)
+
+                        if (event.action == MotionEvent.ACTION_UP && isBallHoveringDismiss) {
+                            // Captured in close zone: Animate ball scaling down to 0 and dismiss!
+                            badge.animate()
+                                .scaleX(0f)
+                                .scaleY(0f)
+                                .alpha(0f)
+                                .setDuration(160)
+                                .withEndAction {
+                                    dismissFloatingBadge()
+                                }
+                                .start()
+                            hideDismissTarget()
+                            return true
+                        }
+
+                        hideDismissTarget()
+                        badge.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(100).start()
+
+                        if (isClick && event.action == MotionEvent.ACTION_UP) {
                             lastBadgeX = layoutParams.x
                             lastBadgeY = layoutParams.y
                             dismissQuickPreview()
                             onBadgeClicked(layoutParams.x, layoutParams.y)
-                        } else {
+                        } else if (event.action == MotionEvent.ACTION_UP) {
                             val screenWidth = displayMetrics.widthPixels
-                            layoutParams.x = if (layoutParams.x + dpSize / 2 < screenWidth / 2) {
+                            val targetX = if (layoutParams.x + dpSize / 2 < screenWidth / 2) {
                                 16
                             } else {
                                 screenWidth - dpSize - 16
                             }
-                            lastBadgeX = layoutParams.x
-                            try {
-                                windowManager?.updateViewLayout(badge, layoutParams)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
+                            lastBadgeX = targetX
+                            lastBadgeY = layoutParams.y.coerceIn(100, displayMetrics.heightPixels - dpSize - 100)
+
+                            // Smooth animated snap to screen edge
+                            val animator = ValueAnimator.ofInt(layoutParams.x, targetX).apply {
+                                duration = 180
+                                interpolator = DecelerateInterpolator()
+                                addUpdateListener { va ->
+                                    layoutParams.x = va.animatedValue as Int
+                                    try {
+                                        windowManager?.updateViewLayout(badge, layoutParams)
+                                    } catch (_: Exception) {}
+                                }
                             }
+                            animator.start()
                         }
                         return true
                     }
@@ -439,6 +514,239 @@ class LipiOverlayService : Service() {
             }
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    /**
+     * Shows a bottom dismiss circle with close '✕' icon when the floating ball is selected/held or dragged.
+     */
+    private fun showDismissTarget() {
+        if (dismissTargetView != null || !Settings.canDrawOverlays(this)) return
+
+        val displayMetrics = resources.displayMetrics
+        val density = displayMetrics.density
+        val targetHeight = (130 * density).toInt()
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            targetHeight,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = 0
+        }
+
+        val container = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
+        }
+
+        // Bottom subtle dark vignette
+        val gradientBackdrop = View(this).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.BOTTOM_TOP,
+                intArrayOf(0xBB000000.toInt(), 0x00000000)
+            )
+        }
+        container.addView(gradientBackdrop, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        ))
+
+        // Center close icon circle & label
+        val centerGroup = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            clipChildren = false
+            clipToPadding = false
+        }
+
+        val circleSize = (62 * density).toInt()
+        val circleView = FrameLayout(this).apply {
+            tag = "dismiss_circle"
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xDD1E1E1E.toInt())
+                setStroke((2f * density).toInt(), 0xFFEF5350.toInt())
+            }
+            elevation = 16f * density
+
+            val crossIcon = TextView(this@LipiOverlayService).apply {
+                text = "✕"
+                textSize = 22f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+            }
+            addView(crossIcon, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply { gravity = Gravity.CENTER })
+        }
+
+        val labelView = TextView(this).apply {
+            tag = "dismiss_label"
+            text = "বন্ধ করতে এখানে আনুন"
+            textSize = 11.5f
+            setTextColor(Color.WHITE)
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setShadowLayer(4f, 0f, 2f, 0xAA000000.toInt())
+            setPadding(0, (6 * density).toInt(), 0, 0)
+        }
+
+        centerGroup.addView(circleView, LinearLayout.LayoutParams(circleSize, circleSize).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+        })
+        centerGroup.addView(labelView)
+
+        val groupParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            bottomMargin = (18 * density).toInt()
+        }
+        container.addView(centerGroup, groupParams)
+
+        container.alpha = 0f
+        container.translationY = 50 * density
+
+        dismissTargetView = container
+        isDismissTargetShowing = true
+        isBallHoveringDismiss = false
+
+        try {
+            windowManager?.addView(container, params)
+            container.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(180)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            dismissTargetView = null
+            isDismissTargetShowing = false
+        }
+    }
+
+    private fun updateDismissTargetHover(isHovering: Boolean, badge: View) {
+        if (isBallHoveringDismiss == isHovering) return
+        isBallHoveringDismiss = isHovering
+
+        val container = dismissTargetView ?: return
+        val circleView = container.findViewWithTag<FrameLayout>("dismiss_circle") ?: return
+        val labelView = container.findViewWithTag<TextView>("dismiss_label") ?: return
+        val density = resources.displayMetrics.density
+
+        if (isHovering) {
+            circleView.animate()
+                .scaleX(1.22f)
+                .scaleY(1.22f)
+                .setDuration(120)
+                .setInterpolator(OvershootInterpolator(1.4f))
+                .start()
+
+            (circleView.background as? GradientDrawable)?.apply {
+                setColor(0xFFD32F2F.toInt())
+                setStroke((3f * density).toInt(), Color.WHITE)
+            }
+            labelView.text = "ছেড়ে দিলে বন্ধ হবে"
+            labelView.setTextColor(0xFFFFCDD2.toInt())
+
+            badge.animate()
+                .scaleX(0.78f)
+                .scaleY(0.78f)
+                .alpha(0.85f)
+                .setDuration(100)
+                .start()
+
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                    vibrator?.vibrate(VibrationEffect.createOneShot(35, VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    badge.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                }
+            } catch (_: Exception) {}
+        } else {
+            circleView.animate()
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(120)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+
+            (circleView.background as? GradientDrawable)?.apply {
+                setColor(0xDD1E1E1E.toInt())
+                setStroke((2f * density).toInt(), 0xFFEF5350.toInt())
+            }
+            labelView.text = "বন্ধ করতে এখানে আনুন"
+            labelView.setTextColor(Color.WHITE)
+
+            badge.animate()
+                .scaleX(1f)
+                .scaleY(1f)
+                .alpha(1f)
+                .setDuration(100)
+                .start()
+        }
+    }
+
+    private fun hideDismissTarget(onEnd: (() -> Unit)? = null) {
+        val target = dismissTargetView
+        dismissTargetView = null
+        isDismissTargetShowing = false
+        isBallHoveringDismiss = false
+
+        if (target != null) {
+            val density = resources.displayMetrics.density
+            target.animate()
+                .alpha(0f)
+                .translationY(40 * density)
+                .setDuration(150)
+                .setInterpolator(DecelerateInterpolator())
+                .withEndAction {
+                    try {
+                        windowManager?.removeView(target)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                    onEnd?.invoke()
+                }
+                .start()
+        } else {
+            onEnd?.invoke()
+        }
+    }
+
+    private fun dismissFloatingBadge() {
+        dismissQuickPreview()
+        dismissTranslationPopup()
+        hideDismissTarget()
+
+        if (floatingBadgeView != null) {
+            try {
+                windowManager?.removeView(floatingBadgeView)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            floatingBadgeView = null
+        }
+
+        val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("floating_enabled", false).apply()
+        updatePersistentNotification()
+        mainHandler.post {
+            Toast.makeText(this, "ভাসমান অনুবাদক বল বন্ধ করা হয়েছে", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1099,6 +1407,16 @@ class LipiOverlayService : Service() {
     private fun dismissAllOverlays() {
         dismissQuickPreview()
         dismissTranslationPopup()
+        if (dismissTargetView != null) {
+            try {
+                windowManager?.removeView(dismissTargetView)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            dismissTargetView = null
+            isDismissTargetShowing = false
+            isBallHoveringDismiss = false
+        }
         if (floatingBadgeView != null) {
             try {
                 windowManager?.removeView(floatingBadgeView)
