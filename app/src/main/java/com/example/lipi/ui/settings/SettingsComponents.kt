@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudSync
@@ -644,19 +645,20 @@ fun OnlineEngineBottomSheet(
         }
     }
 
-    val allAvailableModels = remember(fetchedModels) {
-        if (fetchedModels.isEmpty()) {
-            LipiOnlineEngine.AVAILABLE_GEMINI_MODELS
+    val suitableModels = remember(fetchedModels) {
+        val baseList = if (fetchedModels.isEmpty()) {
+            LipiOnlineEngine.SUITABLE_GEMINI_MODELS
         } else {
-            // Deduplicate: prioritize fetched models, then append missing defaults
             val fetchedIds = fetchedModels.map { it.modelId }.toSet()
-            val missingDefaults = LipiOnlineEngine.AVAILABLE_GEMINI_MODELS.filter { it.modelId !in fetchedIds }
+            val missingDefaults = LipiOnlineEngine.SUITABLE_GEMINI_MODELS.filter { it.modelId !in fetchedIds }
             fetchedModels + missingDefaults
         }
+        baseList.filter { LipiOnlineEngine.isModelSuitableForLipi(it.modelId) }
     }
 
-    var isCustomModelSelected by remember(selectedModel, allAvailableModels) {
-        mutableStateOf(allAvailableModels.none { it.modelId == selectedModel })
+    var isModelDropdownExpanded by remember { mutableStateOf(false) }
+    var isCustomModelSelected by remember(selectedModel, suitableModels) {
+        mutableStateOf(suitableModels.none { it.modelId == selectedModel })
     }
     var isTesting by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
@@ -907,23 +909,28 @@ fun OnlineEngineBottomSheet(
                                 }
                             }
 
-                            Text(
-                                text = "গুগলের সর্বশেষ ৩.৮ সহ সব মডেলের তালিকা অটো-ফেচ করা হয়। পছন্দমতো মডেল বেছে নিন:",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-
+                            // Auto-Fallback Information Banner
                             Surface(
-                                shape = RoundedCornerShape(6.dp),
+                                shape = RoundedCornerShape(8.dp),
                                 color = PadmaTealPrimary.copy(alpha = 0.08f),
+                                border = BorderStroke(1.dp, PadmaTealPrimary.copy(alpha = 0.2f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
-                                    text = "💡 পরামর্শ: ৩.৮ খুব নতুন হওয়ায় গুগলে মাঝে মাঝে অতিরিক্ত চাপ (503 High Demand) দেখা দেয়। লিপি স্বয়ংক্রিয়ভাবে ব্যাকআপ মডেলে (Gemini 2.5 Flash) রূপান্তর করে টাইপিং চালু রাখে।",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                    color = PadmaTealPrimary,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
-                                )
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(
+                                        text = "🛡️ স্মার্ট অনলাইন-টু-অফলাইন ফলব্যাক সক্রিয়:",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = PadmaTealPrimary
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "• Gemini AI বা Google ক্লাউড অন থাকলে সেটিকেই প্রথমে অগ্রাধিকার দেওয়া হয়।\n• ইন্টারনেট না থাকলে বা নেটওয়ার্ক সংযোগ বিচ্ছিন্ন হলে লিপি নিজে থেকেই অফলাইন ডাটাবেসে ফলব্যাক করে কাজ সম্পন্ন করে।",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        lineHeight = 15.sp
+                                    )
+                                }
                             }
 
                             if (fetchFeedback != null) {
@@ -941,167 +948,245 @@ fun OnlineEngineBottomSheet(
                                 }
                             }
 
-                            // Dynamic / Available Models List
-                            allAvailableModels.forEach { modelInfo ->
-                                val isSelected = !isCustomModelSelected && selectedModel == modelInfo.modelId
-                                Surface(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .clickable {
-                                            isCustomModelSelected = false
-                                            selectedModel = modelInfo.modelId
-                                            onModelSelected(modelInfo.modelId)
-                                        },
-                                    color = if (isSelected) PadmaTealPrimary.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(
-                                        if (isSelected) 1.5.dp else 1.dp,
-                                        if (isSelected) PadmaTealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                                    ),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(10.dp),
-                                        verticalAlignment = Alignment.Top
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .padding(top = 2.dp)
-                                                .size(18.dp)
-                                                .clip(CircleShape)
-                                                .border(2.dp, if (isSelected) PadmaTealPrimary else MaterialTheme.colorScheme.outline, CircleShape)
-                                                .background(if (isSelected) PadmaTealPrimary else Color.Transparent),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (isSelected) Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
-                                        }
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text(
-                                                        text = modelInfo.displayName,
-                                                        style = MaterialTheme.typography.bodyMedium,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = if (isSelected) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
-                                                    )
-                                                    if (modelInfo.isLiveFetched) {
-                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                        Surface(
-                                                            shape = RoundedCornerShape(3.dp),
-                                                            color = Color(0xFF388E3C).copy(alpha = 0.15f)
-                                                        ) {
-                                                            Text(
-                                                                text = "লাইভ API",
-                                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                                                color = Color(0xFF2E7D32),
-                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                                Surface(
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = if (modelInfo.isRecommended) PadmaTealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
-                                                ) {
-                                                    Text(
-                                                        text = modelInfo.badge,
-                                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                                        color = if (modelInfo.isRecommended) PadmaTealPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    )
-                                                }
-                                            }
-                                            Text(
-                                                text = "ID: ${modelInfo.modelId}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-                                            )
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = modelInfo.description,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                lineHeight = 16.sp
-                                            )
-                                        }
-                                    }
-                                }
-                            }
+                            // Interactive Dropdown for Suitable Gemini Models
+                            Text(
+                                text = "অ্যাপসের উপযোগী মডেল সাজেশন (ড্রপডাউন):",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
 
-                            // Custom Model Option
+                            // Dropdown Trigger Field
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(10.dp))
-                                    .clickable {
-                                        isCustomModelSelected = true
-                                    },
-                                color = if (isCustomModelSelected) PadmaTealPrimary.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surface,
-                                border = BorderStroke(
-                                    if (isCustomModelSelected) 1.5.dp else 1.dp,
-                                    if (isCustomModelSelected) PadmaTealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                                ),
+                                    .clickable { isModelDropdownExpanded = !isModelDropdownExpanded },
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                border = BorderStroke(1.2.dp, if (isModelDropdownExpanded) PadmaTealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
                                 shape = RoundedCornerShape(10.dp)
                             ) {
-                                Column(modifier = Modifier.padding(10.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(18.dp)
-                                                .clip(CircleShape)
-                                                .border(2.dp, if (isCustomModelSelected) PadmaTealPrimary else MaterialTheme.colorScheme.outline, CircleShape)
-                                                .background(if (isCustomModelSelected) PadmaTealPrimary else Color.Transparent),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (isCustomModelSelected) Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
-                                        }
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        val currentInfo = suitableModels.find { it.modelId == selectedModel }
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
-                                                text = "কাস্টম মডেল নাম (Custom Model Entry)",
+                                                text = if (isCustomModelSelected) "কাস্টম: $selectedModel" else (currentInfo?.displayName ?: selectedModel),
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 fontWeight = FontWeight.Bold,
-                                                color = if (isCustomModelSelected) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
+                                                color = PadmaTealPrimary
                                             )
-                                            Text(
-                                                text = "ভবিষ্যতে আসা নতুন মডেল বা এক্সপেরিমেন্টাল মডেল আইডি টাইপ করুন",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
+                                            if (currentInfo != null) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = if (currentInfo.isRecommended) PadmaTealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+                                                ) {
+                                                    Text(
+                                                        text = currentInfo.badge,
+                                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                                        color = if (currentInfo.isRecommended) PadmaTealPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
+                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Text(
+                                            text = if (isCustomModelSelected) "ব্যবহারকারীর কাস্টম মডেল" else (currentInfo?.description ?: "আইডি: $selectedModel"),
+                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDropDown,
+                                        contentDescription = "মডেল ড্রপডাউন",
+                                        tint = PadmaTealPrimary,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+
+                            // Dropdown Expanded List showing only suitable models for Lipi
+                            AnimatedVisibility(visible = isModelDropdownExpanded) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.surface)
+                                        .border(1.dp, PadmaTealPrimary.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
+                                        .padding(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    val groupedModels = suitableModels.groupBy { it.groupLabel.ifBlank { "অন্যান্য Gemini মডেল" } }
+                                    groupedModels.forEach { (groupTitle, modelsInGroup) ->
+                                        Surface(
+                                            color = PadmaTealPrimary.copy(alpha = 0.09f),
+                                            shape = RoundedCornerShape(6.dp),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 4.dp, bottom = 2.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.AutoAwesome,
+                                                    contentDescription = null,
+                                                    tint = PadmaTealPrimary,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = groupTitle,
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp, fontWeight = FontWeight.Bold),
+                                                    color = PadmaTealPrimary
+                                                )
+                                            }
+                                        }
+
+                                        modelsInGroup.forEach { modelInfo ->
+                                            val isSelected = !isCustomModelSelected && selectedModel == modelInfo.modelId
+                                            Surface(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable {
+                                                        isCustomModelSelected = false
+                                                        selectedModel = modelInfo.modelId
+                                                        onModelSelected(modelInfo.modelId)
+                                                        isModelDropdownExpanded = false
+                                                    },
+                                                color = if (isSelected) PadmaTealPrimary.copy(alpha = 0.12f) else Color.Transparent,
+                                                border = BorderStroke(
+                                                    if (isSelected) 1.dp else 0.5.dp,
+                                                    if (isSelected) PadmaTealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
+                                                ),
+                                                shape = RoundedCornerShape(8.dp)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(16.dp)
+                                                            .clip(CircleShape)
+                                                            .border(1.5.dp, if (isSelected) PadmaTealPrimary else MaterialTheme.colorScheme.outline, CircleShape)
+                                                            .background(if (isSelected) PadmaTealPrimary else Color.Transparent),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        if (isSelected) Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(10.dp))
+                                                    }
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text(
+                                                                text = modelInfo.displayName,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = if (isSelected) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
+                                                            )
+                                                            Surface(
+                                                                shape = RoundedCornerShape(3.dp),
+                                                                color = if (modelInfo.isRecommended) PadmaTealPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+                                                            ) {
+                                                                Text(
+                                                                    text = modelInfo.badge,
+                                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                                                    color = if (modelInfo.isRecommended) PadmaTealPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
+                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                        Text(
+                                                            text = modelInfo.description,
+                                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.5.sp),
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            maxLines = 2,
+                                                            lineHeight = 14.sp
+                                                        )
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
 
-                                    if (isCustomModelSelected) {
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        OutlinedTextField(
-                                            value = customModelInput.ifEmpty { if (allAvailableModels.none { it.modelId == selectedModel }) selectedModel else "" },
-                                            onValueChange = { customModelInput = it },
-                                            label = { Text("মডেল আইডি লিখুন") },
-                                            placeholder = { Text("যেমন: gemini-2.0-flash-lite") },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            shape = RoundedCornerShape(8.dp),
-                                            singleLine = true,
-                                            trailingIcon = {
-                                                Button(
-                                                    onClick = {
-                                                        val clean = customModelInput.trim()
-                                                        if (clean.isNotEmpty()) {
-                                                            selectedModel = clean
-                                                            onModelSelected(clean)
-                                                        }
-                                                    },
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    modifier = Modifier.padding(end = 4.dp)
+                                    // Custom Model option inside dropdown
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable {
+                                                isCustomModelSelected = true
+                                            },
+                                        color = if (isCustomModelSelected) PadmaTealPrimary.copy(alpha = 0.12f) else Color.Transparent,
+                                        border = BorderStroke(
+                                            if (isCustomModelSelected) 1.dp else 0.5.dp,
+                                            if (isCustomModelSelected) PadmaTealPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
+                                        ),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Column(modifier = Modifier.padding(8.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(16.dp)
+                                                        .clip(CircleShape)
+                                                        .border(1.5.dp, if (isCustomModelSelected) PadmaTealPrimary else MaterialTheme.colorScheme.outline, CircleShape)
+                                                        .background(if (isCustomModelSelected) PadmaTealPrimary else Color.Transparent),
+                                                    contentAlignment = Alignment.Center
                                                 ) {
-                                                    Text("প্রয়োগ", fontSize = 11.sp)
+                                                    if (isCustomModelSelected) Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(10.dp))
                                                 }
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = "অন্য কোনো কাস্টম মডেল লিখুন...",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isCustomModelSelected) PadmaTealPrimary else MaterialTheme.colorScheme.onSurface
+                                                )
                                             }
-                                        )
+
+                                            if (isCustomModelSelected) {
+                                                Spacer(modifier = Modifier.height(6.dp))
+                                                OutlinedTextField(
+                                                    value = customModelInput.ifEmpty { if (suitableModels.none { it.modelId == selectedModel }) selectedModel else "" },
+                                                    onValueChange = { customModelInput = it },
+                                                    label = { Text("মডেল আইডি লিখুন (যেমন: gemini-2.0-flash-lite)", fontSize = 11.sp) },
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    singleLine = true,
+                                                    trailingIcon = {
+                                                        Button(
+                                                            onClick = {
+                                                                val clean = customModelInput.trim()
+                                                                if (clean.isNotEmpty()) {
+                                                                    selectedModel = clean
+                                                                    onModelSelected(clean)
+                                                                    isModelDropdownExpanded = false
+                                                                }
+                                                            },
+                                                            shape = RoundedCornerShape(6.dp),
+                                                            modifier = Modifier.padding(end = 4.dp)
+                                                        ) {
+                                                            Text("প্রয়োগ", fontSize = 11.sp)
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }

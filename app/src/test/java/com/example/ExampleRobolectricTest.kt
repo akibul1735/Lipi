@@ -171,12 +171,25 @@ class ExampleRobolectricTest {
         viewModel.setGeminiModel("")
         assertEquals("gemini-3.8-flash", repository.geminiModel.value)
 
-        // Verify available models contains latest models
+        // Verify available models contains latest flash & flash-lite and previous 3 groups
         val availableModels = com.example.lipi.engine.LipiOnlineEngine.AVAILABLE_GEMINI_MODELS
         assertTrue(availableModels.any { it.modelId == "gemini-3.8-flash" })
+        assertTrue(availableModels.any { it.modelId == "gemini-3.8-flash-lite" })
         assertTrue(availableModels.any { it.modelId == "gemini-3.8-pro" })
         assertTrue(availableModels.any { it.modelId == "gemini-3.0-flash" })
         assertTrue(availableModels.any { it.modelId == "gemini-2.5-flash" })
+        assertTrue(availableModels.any { it.modelId == "gemini-2.5-flash-lite" })
         assertTrue(availableModels.any { it.modelId == "gemini-2.0-flash" })
+        assertTrue(availableModels.any { it.modelId == "gemini-1.5-flash" })
+
+        // Check group determination
+        val group38 = com.example.lipi.engine.LipiOnlineEngine.determineModelGroup("gemini-3.8-flash-lite")
+        assertTrue(group38.contains("3.x"))
+        val group25 = com.example.lipi.engine.LipiOnlineEngine.determineModelGroup("gemini-2.5-flash")
+        assertTrue(group25.contains("2.5"))
+        val group20 = com.example.lipi.engine.LipiOnlineEngine.determineModelGroup("gemini-2.0-flash")
+        assertTrue(group20.contains("2.0"))
+        val group15 = com.example.lipi.engine.LipiOnlineEngine.determineModelGroup("gemini-1.5-flash")
+        assertTrue(group15.contains("1.5"))
     }
 }

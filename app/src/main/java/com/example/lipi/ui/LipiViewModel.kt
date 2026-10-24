@@ -153,34 +153,37 @@ class LipiViewModel(private val repository: LipiRepository) : ViewModel() {
         if (currentInput.isBlank()) return
 
         val mode = repository.onlineEngineMode.value
-        val provider = when (mode) {
-            OnlineEngineMode.GEMINI_AI -> LipiOnlineEngine.Provider.GEMINI_AI
-            else -> LipiOnlineEngine.Provider.GOOGLE_INPUT_TOOLS
-        }
 
         viewModelScope.launch {
             _isOnlineTranslating.value = true
-            _onlineFeedback.value = "অনলাইন এপিআই থেকে ডেটা আনা হচ্ছে..."
-            val result = LipiOnlineEngine.transliterateOnline(
+            _onlineFeedback.value = if (mode == OnlineEngineMode.GEMINI_AI) {
+                "Gemini AI দিয়ে রূপান্তর করা হচ্ছে..."
+            } else {
+                "Google ক্লাউড ট্রান্সলিটারেশন করা হচ্ছে..."
+            }
+
+            val result = LipiOnlineEngine.transliterateSmart(
                 inputText = currentInput,
-                provider = provider,
+                mode = _selectedMode.value,
+                enginePreference = mode,
                 customGeminiApiKey = repository.geminiApiKey.value,
-                geminiModel = repository.geminiModel.value
+                geminiModel = repository.geminiModel.value,
+                customWordbook = customWordbookMap.value,
+                convertDigitsToBengali = convertDigitsToBengali.value,
+                transliterationStyle = transliterationStyle.value
             )
             _isOnlineTranslating.value = false
-            result.onSuccess { converted ->
-                _onlineRefinedResult.value = converted
-                _onlineFeedback.value = "অনলাইন ক্লাউড রূপান্তর সফল!"
-                val finalResult = ConversionResult(
-                    originalText = currentInput,
-                    convertedText = converted,
-                    tokens = listOf(ProcessedToken(currentInput, converted, TokenType.BANGLISH)),
-                    modeUsed = _selectedMode.value
-                )
-                repository.addRecentConversion(finalResult)
-            }.onFailure { err ->
-                _onlineFeedback.value = "অনলাইন ত্রুটি: ${err.message ?: "কানেকশন ব্যাহত হয়েছে"}"
-            }
+
+            _onlineRefinedResult.value = result.convertedText
+            _onlineFeedback.value = result.feedbackMessage
+
+            val finalResult = ConversionResult(
+                originalText = currentInput,
+                convertedText = result.convertedText,
+                tokens = listOf(ProcessedToken(currentInput, result.convertedText, TokenType.BANGLISH)),
+                modeUsed = _selectedMode.value
+            )
+            repository.addRecentConversion(finalResult)
         }
     }
 

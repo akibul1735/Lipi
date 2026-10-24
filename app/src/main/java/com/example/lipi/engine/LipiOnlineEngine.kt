@@ -11,6 +11,9 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import com.example.lipi.data.OnlineEngineMode
+import com.example.lipi.data.LipiMode
+import com.example.lipi.data.TransliterationStyle
 
 /**
  * Online Cloud & AI Transliteration Engine for Lipi.
@@ -42,61 +45,152 @@ object LipiOnlineEngine {
         val displayName: String,
         val badge: String,
         val description: String,
+        val groupLabel: String = "Gemini 3.x (সর্বাধুনিক প্রজন্ম)",
         val isRecommended: Boolean = false,
         val isLiveFetched: Boolean = false
     )
 
-    val AVAILABLE_GEMINI_MODELS = listOf(
+    /**
+     * Determines which generation/group a Gemini model belongs to:
+     * - Latest Group: Gemini 3.x (3.8 Flash, 3.8 Flash-Lite, 3.8 Pro, 3.0 Flash)
+     * - Previous Group 1: Gemini 2.5 (2.5 Flash, 2.5 Flash-Lite, 2.5 Pro)
+     * - Previous Group 2: Gemini 2.0 (2.0 Flash, 2.0 Flash-Lite, 2.0 Pro)
+     * - Previous Group 3: Gemini 1.5 (1.5 Flash, 1.5 Flash-8B, 1.5 Pro)
+     */
+    fun determineModelGroup(modelId: String): String {
+        val id = modelId.lowercase()
+        return when {
+            id.contains("3.8") || id.contains("3.0") || id.contains("3.") -> "Gemini 3.x (সর্বাধুনিক প্রজন্ম — Flash & Flash-Lite)"
+            id.contains("2.5") -> "Gemini 2.5 (পূর্ববর্তী গ্রুপ ১)"
+            id.contains("2.0") || id.contains("2.") -> "Gemini 2.0 (পূর্ববর্তী গ্রুপ ২)"
+            id.contains("1.5") || id.contains("1.0") || id.contains("1.") -> "Gemini 1.5 (পূর্ববর্তী গ্রুপ ৩)"
+            else -> "অন্যান্য Gemini মডেল"
+        }
+    }
+
+    /**
+     * Determines whether a Gemini model is suitable for Lipi (text chat, transliteration, high speed).
+     * Excludes embeddings, audio, vision, robotics, and experimental tuning models.
+     */
+    fun isModelSuitableForLipi(modelId: String): Boolean {
+        val id = modelId.lowercase()
+        if (!id.contains("gemini")) return false
+        val unsuitableKeywords = listOf(
+            "embedding", "imagen", "veo", "vision", "audio", "voice",
+            "robotics", "computer-use", "aqa", "code-instruct", "medlm",
+            "custom", "tuning", "test", "internal", "tts", "asr"
+        )
+        if (unsuitableKeywords.any { id.contains(it) }) return false
+        return id.contains("flash") || id.contains("lite") || id.contains("pro") || id.contains("8b") || id.contains("gemini-")
+    }
+
+    val SUITABLE_GEMINI_MODELS = listOf(
+        // Group: Gemini 3.x (Latest Generation)
         GeminiModelInfo(
             modelId = "gemini-3.8-flash",
             displayName = "Gemini 3.8 Flash",
-            badge = "সর্বাধুনিক ৩.৮ ও সুপার ফাস্ট",
-            description = "সর্বাধুনিক ৩.৮ আল্ট্রা-ফাস্ট মডেল — দ্রুততম ল্যাটেন্সি ও নির্ভুল বাংলিশ চ্যাট রূপান্তরের জন্য সেরা",
+            badge = "সর্বাধুনিক ৩.৮ ফ্ল্যাশ",
+            description = "নতুন ৩.৮ সংস্করণ — অতি দ্রুত ও বুদ্ধিমান (অনলাইন সমস্যায় স্বয়ংক্রিয় অফলাইন ব্যাকআপ)",
+            groupLabel = "Gemini 3.x (সর্বাধুনিক প্রজন্ম — Flash & Flash-Lite)",
+            isRecommended = true
+        ),
+        GeminiModelInfo(
+            modelId = "gemini-3.8-flash-lite",
+            displayName = "Gemini 3.8 Flash-Lite",
+            badge = "সর্বাধুনিক ৩.৮ লাইট",
+            description = "সর্বাধুনিক ৩.৮ ফ্ল্যাশ-লাইট — আল্ট্রা লো-ল্যাটেন্সি দ্রুততম রেসপন্স ও সাশ্রয়ী কোটা ব্যবহার",
+            groupLabel = "Gemini 3.x (সর্বাধুনিক প্রজন্ম — Flash & Flash-Lite)",
             isRecommended = true
         ),
         GeminiModelInfo(
             modelId = "gemini-3.8-pro",
             displayName = "Gemini 3.8 Pro",
-            badge = "সর্বোচ্চ বুদ্ধিমত্তা ৩.৮",
-            description = "জটিল ব্যাকরণ, দীর্ঘ বাক্য ও গভীর বুদ্ধিমত্তাসম্পন্ন নতুন ৩.৮ ফ্ল্যাগশিপ মডেল",
+            badge = "সর্বাধুনিক ৩.৮ প্রো",
+            description = "জটিল বাক্য, ব্যাকরণগত শুদ্ধতা ও গভীর অর্থ বিশ্লেষণের জন্য শক্তিশালী ৩.৮ প্রো সংস্করণ",
+            groupLabel = "Gemini 3.x (সর্বাধুনিক প্রজন্ম — Flash & Flash-Lite)",
             isRecommended = false
         ),
         GeminiModelInfo(
             modelId = "gemini-3.0-flash",
             displayName = "Gemini 3.0 Flash",
-            badge = "নতুন ৩.০",
-            description = "উচ্চ নির্ভুলতা ও দ্রুত এআই রেসপন্স",
+            badge = "৩.০ ফ্ল্যাশ",
+            description = "দ্রুত ও বুদ্ধিমান ৩.০ ফ্ল্যাশ মডেল",
+            groupLabel = "Gemini 3.x (সর্বাধুনিক প্রজন্ম — Flash & Flash-Lite)",
             isRecommended = false
         ),
+
+        // Group: Gemini 2.5 (Previous Group 1)
         GeminiModelInfo(
             modelId = "gemini-2.5-flash",
             displayName = "Gemini 2.5 Flash",
-            badge = "স্টেবল ও দ্রুত",
-            description = "জনপ্রিয় ২.৫ সংস্করণ — রিয়েলটাইম বার্তা রূপান্তরের জন্য নির্ভরযোগ্য",
+            badge = "২.৫ ফ্ল্যাশ",
+            description = "লিপির জন্য অত্যন্ত নির্ভরযোগ্য ও দ্রুততম মডেল — কোনো ডাউনটাইম ছাড়া কার্যকর",
+            groupLabel = "Gemini 2.5 (পূর্ববর্তী গ্রুপ ১)",
+            isRecommended = false
+        ),
+        GeminiModelInfo(
+            modelId = "gemini-2.5-flash-lite",
+            displayName = "Gemini 2.5 Flash-Lite",
+            badge = "২.৫ ফ্ল্যাশ লাইট",
+            description = "হালকা ও অত্যন্ত দ্রুত ২.৫ সংস্করণ",
+            groupLabel = "Gemini 2.5 (পূর্ববর্তী গ্রুপ ১)",
             isRecommended = false
         ),
         GeminiModelInfo(
             modelId = "gemini-2.5-pro",
             displayName = "Gemini 2.5 Pro",
-            badge = "প্রো কোয়ালিটি",
-            description = "জটিল বাক্য, ব্যাকরণগত শুদ্ধতা ও গভীর অর্থ বিশ্লেষণের জন্য শক্তিশালী",
+            badge = "২.৫ প্রো কোয়ালিটি",
+            description = "উচ্চ নির্ভুলতা ও বিস্তারিত ভাষাগত বিশ্লেষণ",
+            groupLabel = "Gemini 2.5 (পূর্ববর্তী গ্রুপ ১)",
             isRecommended = false
         ),
+
+        // Group: Gemini 2.0 (Previous Group 2)
         GeminiModelInfo(
             modelId = "gemini-2.0-flash",
             displayName = "Gemini 2.0 Flash",
-            badge = "আল্ট্রা ফাস্ট",
-            description = "লো-ল্যাটেন্সি ও দ্রুত উত্তর প্রদান",
+            badge = "২.০ ফ্ল্যাশ",
+            description = "আল্ট্রা লো-ল্যাটেন্সি দ্রুততম রেসপন্স টাইম ও নির্ভরযোগ্য পারফরম্যান্স",
+            groupLabel = "Gemini 2.0 (পূর্ববর্তী গ্রুপ ২)",
             isRecommended = false
         ),
         GeminiModelInfo(
+            modelId = "gemini-2.0-flash-lite",
+            displayName = "Gemini 2.0 Flash-Lite",
+            badge = "২.০ লাইট",
+            description = "দ্রুততম রেসপন্স ও অতি হালকা ক্লাউড রিসোর্স ব্যবহার",
+            groupLabel = "Gemini 2.0 (পূর্ববর্তী গ্রুপ ২)",
+            isRecommended = false
+        ),
+
+        // Group: Gemini 1.5 (Previous Group 3)
+        GeminiModelInfo(
             modelId = "gemini-1.5-flash",
             displayName = "Gemini 1.5 Flash",
-            badge = "ক্লাসিক",
-            description = "স্ট্যান্ডার্ড সংস্করণ ও বিশ্বস্ত কার্যকারিতা",
+            badge = "১.৫ ফ্ল্যাশ",
+            description = "জনপ্রিয় ও বিশ্বস্ত ক্লাসিক স্ট্যান্ডার্ড সংস্করণ",
+            groupLabel = "Gemini 1.5 (পূর্ববর্তী গ্রুপ ৩)",
+            isRecommended = false
+        ),
+        GeminiModelInfo(
+            modelId = "gemini-1.5-flash-8b",
+            displayName = "Gemini 1.5 Flash-8B",
+            badge = "১.৫ ফ্ল্যাশ ৮বি",
+            description = "অত্যন্ত হালকা ৮বি প্যারামিটার মডেল",
+            groupLabel = "Gemini 1.5 (পূর্ববর্তী গ্রুপ ৩)",
+            isRecommended = false
+        ),
+        GeminiModelInfo(
+            modelId = "gemini-1.5-pro",
+            displayName = "Gemini 1.5 Pro",
+            badge = "১.৫ প্রো",
+            description = "উচ্চ প্রিসিশন সমৃদ্ধ ক্লাসিক প্রো মডেল",
+            groupLabel = "Gemini 1.5 (পূর্ববর্তী গ্রুপ ৩)",
             isRecommended = false
         )
     )
+
+    val AVAILABLE_GEMINI_MODELS = SUITABLE_GEMINI_MODELS
 
     /**
      * Dynamically fetches the latest Gemini models available for the user's API key from Google Generative AI API.
@@ -148,26 +242,35 @@ object LipiOnlineEngine {
                             }
                         }
 
-                        // Filter models that support content generation and belong to the gemini family
-                        if (supportsGenerateContent && name.contains("gemini", ignoreCase = true)) {
+                        // Filter only models that support generateContent and are suitable for Lipi
+                        if (supportsGenerateContent && isModelSuitableForLipi(name)) {
                             val cleanId = name.removePrefix("models/")
-                            if (!cleanId.contains("embedding") && !cleanId.contains("aqa")) {
+                            if (isModelSuitableForLipi(cleanId)) {
+                                val group = determineModelGroup(cleanId)
                                 val badge = when {
+                                    cleanId.contains("3.8") && cleanId.contains("lite") -> "সর্বাধুনিক ৩.৮ লাইট"
+                                    cleanId.contains("3.8") && cleanId.contains("flash") -> "সর্বাধুনিক ৩.৮ ফ্ল্যাশ"
                                     cleanId.contains("3.8") -> "সর্বাধুনিক ৩.৮"
                                     cleanId.contains("3.0") -> "নতুন ৩.০"
+                                    cleanId.contains("2.5") && cleanId.contains("lite") -> "২.৫ ফ্ল্যাশ লাইট"
                                     cleanId.contains("2.5") -> "আধুনিক ২.৫"
+                                    cleanId.contains("2.0") && cleanId.contains("lite") -> "২.০ ফ্ল্যাশ লাইট"
                                     cleanId.contains("2.0") -> "স্টেবল ২.০"
+                                    cleanId.contains("1.5") && cleanId.contains("8b") -> "১.৫ ৮বি"
+                                    cleanId.contains("1.5") -> "ক্লাসিক ১.৫"
+                                    cleanId.contains("lite") -> "ফ্ল্যাশ লাইট"
                                     cleanId.contains("flash") -> "দ্রুতগতির ফ্ল্যাশ"
                                     cleanId.contains("pro") -> "প্রো কোয়ালিটি"
                                     else -> "এআই মডেল"
                                 }
-                                val isRec = cleanId == "gemini-3.8-flash" || (cleanId.contains("3.8") && cleanId.contains("flash"))
+                                val isRec = cleanId == "gemini-3.8-flash" || cleanId == "gemini-3.8-flash-lite"
                                 modelList.add(
                                     GeminiModelInfo(
                                         modelId = cleanId,
                                         displayName = displayName.ifBlank { cleanId },
                                         badge = badge,
                                         description = description.ifBlank { "Google Generative AI Gemini মডেল" },
+                                        groupLabel = group,
                                         isRecommended = isRec,
                                         isLiveFetched = true
                                     )
@@ -208,8 +311,10 @@ object LipiOnlineEngine {
         else if (modelId.contains("2.0")) score += 2000
         else if (modelId.contains("1.5")) score += 1500
 
-        if (modelId.contains("flash")) score += 50
-        if (modelId.contains("pro")) score += 40
+        if (modelId.contains("flash-lite") || modelId.contains("flash_lite") || modelId.contains("lite")) score += 48
+        else if (modelId.contains("flash")) score += 50
+        else if (modelId.contains("pro")) score += 40
+        else if (modelId.contains("8b")) score += 35
         if (modelId.contains("exp") || modelId.contains("preview")) score -= 5
         return score
     }
@@ -221,7 +326,7 @@ object LipiOnlineEngine {
         inputText: String,
         provider: Provider = Provider.GOOGLE_INPUT_TOOLS,
         customGeminiApiKey: String = "",
-        geminiModel: String = "gemini-3.8-flash"
+        geminiModel: String = "gemini-2.5-flash"
     ): Result<String> = withContext(Dispatchers.IO) {
         val trimmed = inputText.trim()
         if (trimmed.isEmpty()) return@withContext Result.success(inputText)
@@ -233,6 +338,115 @@ object LipiOnlineEngine {
             }
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    data class SmartTransliterationResult(
+        val originalText: String,
+        val convertedText: String,
+        val engineUsed: OnlineEngineMode,
+        val isFallbackToOffline: Boolean = false,
+        val feedbackMessage: String? = null
+    )
+
+    /**
+     * Executes transliteration according to user's selected engine:
+     * - If Gemini AI is selected: Uses Gemini AI first. If offline, timeout, or network problem,
+     *   automatically falls back to authentic offline phonetic data so typing never fails.
+     * - If Google Input Tools (Transliteration API) is selected: Uses Google Input Tools first.
+     *   If offline or network error, automatically falls back to offline phonetic data.
+     * - If Offline Only: Uses offline data directly.
+     */
+    suspend fun transliterateSmart(
+        inputText: String,
+        mode: LipiMode = LipiMode.BANGLISH_TO_BENGALI,
+        enginePreference: OnlineEngineMode,
+        customGeminiApiKey: String = "",
+        geminiModel: String = "gemini-2.5-flash",
+        customWordbook: Map<String, String> = emptyMap(),
+        convertDigitsToBengali: Boolean = false,
+        transliterationStyle: TransliterationStyle = TransliterationStyle.ALL_BENGALI
+    ): SmartTransliterationResult = withContext(Dispatchers.IO) {
+        val trimmed = inputText.trim()
+        if (trimmed.isEmpty()) {
+            return@withContext SmartTransliterationResult(
+                originalText = inputText,
+                convertedText = inputText,
+                engineUsed = OnlineEngineMode.OFFLINE_ONLY
+            )
+        }
+
+        fun runOffline(): String {
+            return MixedScriptTokenizer.process(
+                inputText = trimmed,
+                mode = mode,
+                convertDigitsToBengali = convertDigitsToBengali,
+                customWordbook = customWordbook,
+                transliterationStyle = transliterationStyle
+            ).convertedText
+        }
+
+        return@withContext when (enginePreference) {
+            OnlineEngineMode.OFFLINE_ONLY -> {
+                SmartTransliterationResult(
+                    originalText = trimmed,
+                    convertedText = runOffline(),
+                    engineUsed = OnlineEngineMode.OFFLINE_ONLY,
+                    isFallbackToOffline = false
+                )
+            }
+            OnlineEngineMode.GEMINI_AI -> {
+                val geminiRes = transliterateOnline(
+                    inputText = trimmed,
+                    provider = Provider.GEMINI_AI,
+                    customGeminiApiKey = customGeminiApiKey,
+                    geminiModel = geminiModel
+                )
+                if (geminiRes.isSuccess) {
+                    SmartTransliterationResult(
+                        originalText = trimmed,
+                        convertedText = geminiRes.getOrThrow(),
+                        engineUsed = OnlineEngineMode.GEMINI_AI,
+                        isFallbackToOffline = false,
+                        feedbackMessage = "Gemini AI স্মার্ট ইঞ্জিন সফল!"
+                    )
+                } else {
+                    // Seamless fallback to offline dictionary and phonetic engine
+                    val offlineText = runOffline()
+                    SmartTransliterationResult(
+                        originalText = trimmed,
+                        convertedText = offlineText,
+                        engineUsed = OnlineEngineMode.OFFLINE_ONLY,
+                        isFallbackToOffline = true,
+                        feedbackMessage = "ইন্টারনেট/এআই সংযোগ না থাকায় অফলাইন ডেটাবেস দিয়ে রূপান্তর সম্পন্ন হয়েছে।"
+                    )
+                }
+            }
+            OnlineEngineMode.ONLINE_CLOUD -> {
+                val googleRes = transliterateOnline(
+                    inputText = trimmed,
+                    provider = Provider.GOOGLE_INPUT_TOOLS
+                )
+                if (googleRes.isSuccess) {
+                    SmartTransliterationResult(
+                        originalText = trimmed,
+                        convertedText = googleRes.getOrThrow(),
+                        engineUsed = OnlineEngineMode.ONLINE_CLOUD,
+                        isFallbackToOffline = false,
+                        feedbackMessage = "Google ক্লাউড ট্রান্সলিটারেশন সফল!"
+                    )
+                } else {
+                    // Seamless fallback to offline dictionary and phonetic engine
+                    val offlineText = runOffline()
+                    SmartTransliterationResult(
+                        originalText = trimmed,
+                        convertedText = offlineText,
+                        engineUsed = OnlineEngineMode.OFFLINE_ONLY,
+                        isFallbackToOffline = true,
+                        feedbackMessage = "ইন্টারনেট না থাকায় অফলাইন ডেটাবেস দিয়ে রূপান্তর সম্পন্ন হয়েছে।"
+                    )
+                }
+            }
         }
     }
 
