@@ -1695,7 +1695,7 @@ class LipiOverlayService : Service() {
                 }
             } catch (_: Exception) {}
             showSelectionToolbar(forInput = true)
-            true
+            false // allow Android native selection handles and built-in menu to process
         }
 
         translationText.setOnLongClickListener {
@@ -1703,17 +1703,106 @@ class LipiOverlayService : Service() {
                 translationText.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
             } catch (_: Exception) {}
             showSelectionToolbar(forInput = false)
-            true
+            false // allow Android native selection handles to process
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val inputCallback = object : ActionMode.Callback {
                 override fun onCreateActionMode(mode: ActionMode?, menu: Menu?): Boolean {
                     showSelectionToolbar(forInput = true)
+                    if (menu != null) {
+                        if (menu.findItem(android.R.id.cut) == null) {
+                            menu.add(Menu.NONE, android.R.id.cut, 1, "Cut").setIcon(android.R.drawable.ic_menu_crop)
+                        }
+                        if (menu.findItem(android.R.id.copy) == null) {
+                            menu.add(Menu.NONE, android.R.id.copy, 2, "Copy").setIcon(android.R.drawable.ic_menu_save)
+                        }
+                        if (menu.findItem(android.R.id.paste) == null) {
+                            menu.add(Menu.NONE, android.R.id.paste, 3, "Paste")
+                        }
+                        if (menu.findItem(android.R.id.selectAll) == null) {
+                            menu.add(Menu.NONE, android.R.id.selectAll, 4, "Select all")
+                        }
+                    }
                     return true
                 }
                 override fun onPrepareActionMode(mode: ActionMode?, menu: Menu?): Boolean = true
-                override fun onActionItemClicked(mode: ActionMode?, item: MenuItem?): Boolean = false
+                override fun onActionItemClicked(mode: ActionMode?, item: MenuItem?): Boolean {
+                    when (item?.itemId) {
+                        android.R.id.cut -> {
+                            val start = inputField.selectionStart.coerceAtLeast(0)
+                            val end = inputField.selectionEnd.coerceAtMost(inputField.text.length)
+                            val textToCopy: String
+                            if (end > start) {
+                                textToCopy = inputField.text.substring(start, end)
+                                inputField.text.delete(start, end)
+                            } else {
+                                textToCopy = inputField.text.toString()
+                                inputField.setText("")
+                            }
+                            if (textToCopy.isNotBlank()) {
+                                lastObservedClipText = textToCopy
+                                clipboardManager?.setPrimaryClip(ClipData.newPlainText("Input Text", textToCopy))
+                                safeToast("কাট সম্পন্ন হয়েছে!")
+                            }
+                            val remaining = inputField.text.toString()
+                            currentText = remaining
+                            val logicRes = processText(remaining)
+                            lastAppLogicResult = logicRes
+                            convertedBengali = logicRes
+                            translationText.text = if (logicRes.isNotBlank()) logicRes else if (isReverseMode) "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..." else "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
+                            mode?.finish()
+                            return true
+                        }
+                        android.R.id.copy -> {
+                            val start = inputField.selectionStart.coerceAtLeast(0)
+                            val end = inputField.selectionEnd.coerceAtMost(inputField.text.length)
+                            val textToCopy = if (end > start) inputField.text.substring(start, end) else inputField.text.toString()
+                            if (textToCopy.isNotBlank()) {
+                                lastObservedClipText = textToCopy
+                                clipboardManager?.setPrimaryClip(ClipData.newPlainText("Input Text", textToCopy))
+                                safeToast("ইনপুট টেক্সট কপি হয়েছে!")
+                            }
+                            mode?.finish()
+                            return true
+                        }
+                        android.R.id.paste -> {
+                            val clip = clipboardManager?.primaryClip
+                            val clipText = if (clip != null && clip.itemCount > 0) {
+                                clip.getItemAt(0)?.coerceToText(this@LipiOverlayService)?.toString() ?: ""
+                            } else ""
+                            if (clipText.isNotBlank()) {
+                                val start = inputField.selectionStart.coerceAtLeast(0)
+                                val end = inputField.selectionEnd.coerceAtMost(inputField.text.length)
+                                if (end > start) {
+                                    inputField.text.replace(start, end, clipText)
+                                } else {
+                                    inputField.text.insert(start, clipText)
+                                }
+                                val updated = inputField.text.toString()
+                                currentText = updated
+                                val logicRes = processText(updated)
+                                lastAppLogicResult = logicRes
+                                convertedBengali = logicRes
+                                translationText.text = logicRes
+                                safeToast("পেস্ট সম্পন্ন হয়েছে!")
+                                if (getOnlineEngineMode() == OnlineEngineMode.GEMINI_AI) {
+                                    triggerGeminiTransliteration(updated, force = false)
+                                }
+                            } else {
+                                safeToast("ক্লিপবোর্ডে কোনো লেখা নেই")
+                            }
+                            mode?.finish()
+                            return true
+                        }
+                        android.R.id.selectAll -> {
+                            inputField.selectAll()
+                            safeToast("সব লেখা সিলেক্ট করা হয়েছে")
+                            return true
+                        }
+                    }
+                    return false
+                }
                 override fun onDestroyActionMode(mode: ActionMode?) {}
             }
             inputField.customSelectionActionModeCallback = inputCallback
@@ -1722,10 +1811,38 @@ class LipiOverlayService : Service() {
             translationText.customSelectionActionModeCallback = object : ActionMode.Callback {
                 override fun onCreateActionMode(mode: ActionMode?, menu: Menu?): Boolean {
                     showSelectionToolbar(forInput = false)
+                    if (menu != null) {
+                        if (menu.findItem(android.R.id.copy) == null) {
+                            menu.add(Menu.NONE, android.R.id.copy, 1, "Copy")
+                        }
+                        if (menu.findItem(android.R.id.selectAll) == null) {
+                            menu.add(Menu.NONE, android.R.id.selectAll, 2, "Select all")
+                        }
+                    }
                     return true
                 }
                 override fun onPrepareActionMode(mode: ActionMode?, menu: Menu?): Boolean = true
-                override fun onActionItemClicked(mode: ActionMode?, item: MenuItem?): Boolean = false
+                override fun onActionItemClicked(mode: ActionMode?, item: MenuItem?): Boolean {
+                    when (item?.itemId) {
+                        android.R.id.copy -> {
+                            val outText = translationText.text.toString()
+                            if (outText.isNotBlank()) {
+                                lastObservedClipText = outText
+                                val label = if (isReverseMode) "Banglish Translation" else "Bengali Translation"
+                                clipboardManager?.setPrimaryClip(ClipData.newPlainText(label, outText))
+                                val msg = if (isReverseMode) "বাংলিশ অনুবাদ কপি হয়েছে!" else "বাংলা অনুবাদ কপি হয়েছে!"
+                                safeToast(msg)
+                            }
+                            mode?.finish()
+                            return true
+                        }
+                        android.R.id.selectAll -> {
+                            safeToast("ফলাফল সম্পূর্ণ নির্বাচিত হয়েছে")
+                            return true
+                        }
+                    }
+                    return false
+                }
                 override fun onDestroyActionMode(mode: ActionMode?) {}
             }
         }
