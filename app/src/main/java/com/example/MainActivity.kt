@@ -41,47 +41,6 @@ class MainActivity : ComponentActivity() {
             defaultHandler?.uncaughtException(thread, throwable)
         }
 
-        // Monitor floating switch and manage LipiOverlayService lifecycle
-        lifecycleScope.launch {
-            viewModel.isFloatingServiceEnabled.collectLatest { enabled ->
-                if (enabled && Settings.canDrawOverlays(this@MainActivity)) {
-                    val intent = Intent(this@MainActivity, LipiOverlayService::class.java).apply {
-                        action = LipiOverlayService.ACTION_START_ASSISTANT
-                    }
-                    try {
-                        androidx.core.content.ContextCompat.startForegroundService(this@MainActivity, intent)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                } else if (!enabled && Settings.canDrawOverlays(this@MainActivity)) {
-                    val intent = Intent(this@MainActivity, LipiOverlayService::class.java).apply {
-                        action = LipiOverlayService.ACTION_DISMISS
-                    }
-                    try {
-                        startService(intent)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-            }
-        }
-
-        // Monitor persistent notification switch to update status bar notification
-        lifecycleScope.launch {
-            viewModel.isPersistentNotificationEnabled.collectLatest { enabled ->
-                if (enabled && Settings.canDrawOverlays(this@MainActivity)) {
-                    val intent = Intent(this@MainActivity, LipiOverlayService::class.java).apply {
-                        action = LipiOverlayService.ACTION_UPDATE_NOTIFICATION
-                    }
-                    try {
-                        androidx.core.content.ContextCompat.startForegroundService(this@MainActivity, intent)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-            }
-        }
-
         setContent {
             LipiTheme {
                 LipiMainScreen(
@@ -96,11 +55,13 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         if (::viewModel.isInitialized) {
             viewModel.checkSystemPermissions(this)
-            // If enabled and permission is ready, make sure overlay is shown
-            if (viewModel.isFloatingServiceEnabled.value && Settings.canDrawOverlays(this)) {
+            val canOverlay = Settings.canDrawOverlays(this)
+            val isFloating = viewModel.isFloatingServiceEnabled.value
+            val isNotification = viewModel.isPersistentNotificationEnabled.value
+            if (canOverlay && (isFloating || isNotification)) {
                 try {
                     val intent = Intent(this, LipiOverlayService::class.java).apply {
-                        action = LipiOverlayService.ACTION_START_ASSISTANT
+                        action = if (isFloating) LipiOverlayService.ACTION_START_ASSISTANT else LipiOverlayService.ACTION_UPDATE_NOTIFICATION
                     }
                     androidx.core.content.ContextCompat.startForegroundService(this, intent)
                 } catch (e: Exception) {

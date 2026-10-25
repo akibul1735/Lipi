@@ -196,16 +196,20 @@ class LipiOverlayService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         try {
-            // Satisfy Android 8+ foreground service requirements immediately if notification is enabled
             val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
             val isNotificationEnabled = prefs.getBoolean("persistent_notification_enabled", true)
-            if (isNotificationEnabled && intent?.action != ACTION_DISMISS && intent?.action != ACTION_KILL_SERVICE) {
-                updatePersistentNotification()
+            val isFloatingEnabled = prefs.getBoolean("floating_enabled", true)
+
+            // Satisfy Android 8+ foreground service requirements immediately if notification or floating is enabled
+            if (intent?.action != ACTION_KILL_SERVICE) {
+                if (isNotificationEnabled || isFloatingEnabled || floatingBadgeView != null) {
+                    updatePersistentNotification()
+                }
             }
 
             if (!Settings.canDrawOverlays(this)) {
                 dismissAllOverlays()
-                if (intent?.action == ACTION_DISMISS || intent?.action == ACTION_KILL_SERVICE) {
+                if (intent?.action == ACTION_KILL_SERVICE) {
                     stopSelf()
                     return START_NOT_STICKY
                 }
@@ -217,7 +221,7 @@ class LipiOverlayService : Service() {
             }
 
             when (intent?.action) {
-                ACTION_KILL_SERVICE, ACTION_DISMISS -> {
+                ACTION_KILL_SERVICE -> {
                     isServiceKilled = true
                     dismissAllOverlays()
                     try {
@@ -232,6 +236,26 @@ class LipiOverlayService : Service() {
                     safeToast("লিপি ব্যাকগ্রাউন্ড সার্ভিস ও নোটিফিকেশন বন্ধ করা হয়েছে")
                     stopSelf()
                     return START_NOT_STICKY
+                }
+                ACTION_DISMISS -> {
+                    dismissFloatingBadgeInternal()
+                    if (isNotificationEnabled) {
+                        updatePersistentNotification()
+                        return START_STICKY
+                    } else {
+                        isServiceKilled = true
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                stopForeground(STOP_FOREGROUND_REMOVE)
+                            } else {
+                                @Suppress("DEPRECATION")
+                                stopForeground(true)
+                            }
+                        } catch (_: Exception) {}
+                        cancelPersistentNotification()
+                        stopSelf()
+                        return START_NOT_STICKY
+                    }
                 }
             ACTION_OPEN_POPUP -> {
                 val displayMetrics = resources.displayMetrics
@@ -800,7 +824,7 @@ class LipiOverlayService : Service() {
         }
     }
 
-    private fun dismissFloatingBadge() {
+    private fun dismissFloatingBadgeInternal() {
         dismissQuickPreview()
         dismissTranslationPopup()
         hideDismissTarget()
@@ -809,6 +833,10 @@ class LipiOverlayService : Service() {
             safeRemoveView(it)
             floatingBadgeView = null
         }
+    }
+
+    private fun dismissFloatingBadge() {
+        dismissFloatingBadgeInternal()
 
         val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
         prefs.edit().putBoolean("floating_enabled", false).apply()
@@ -1898,16 +1926,21 @@ class LipiOverlayService : Service() {
     private fun updatePersistentNotification() {
         val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
         val isNotificationEnabled = prefs.getBoolean("persistent_notification_enabled", true)
+        val isFloatingEnabled = prefs.getBoolean("floating_enabled", true)
+        val hasOverlay = floatingBadgeView != null
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
 
-        if (!isNotificationEnabled) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                @Suppress("DEPRECATION")
-                stopForeground(true)
-            }
+        if (!isNotificationEnabled && !isFloatingEnabled && !hasOverlay) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
+            } catch (_: Exception) {}
             cancelPersistentNotification()
+            stopSelf()
             return
         }
 
@@ -1959,40 +1992,51 @@ class LipiOverlayService : Service() {
 
         val isBadgeShowing = floatingBadgeView != null && floatingBadgeView?.visibility == View.VISIBLE
 
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        val title = if (isNotificationEnabled) "লিপি দ্রুত অনুবাদ বার" else "লিপি ভাসমান অনুবাদক"
+        val content = if (isNotificationEnabled)
+            "উইন্ডো খুলতে বা যেকোনো অ্যাপে তাৎক্ষণিক বাংলা অনুবাদের জন্য ট্যাপ করুন"
+        else
+            "যেকোনো অ্যাপে বাংলিশ অনুবাদের জন্য স্ক্রিনে সক্রিয় আছে"
+
+        val notificationBuilder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_lipi)
-            .setContentTitle("লিপি দ্রুত অনুবাদ বার")
-            .setContentText("উইন্ডো খুলতে বা যেকোনো অ্যাপে তাৎক্ষণিক বাংলা অনুবাদের জন্য ট্যাপ করুন")
+            .setContentTitle(title)
+            .setContentText(content)
             .setSubText("Lipi Quick Access")
             .setOngoing(true)
             .setAutoCancel(false)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(if (isNotificationEnabled) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MIN)
             .setContentIntent(openPopupPendingIntent)
-            .addAction(
-                android.R.drawable.ic_menu_edit,
-                "উইন্ডো খুলুন",
-                openPopupPendingIntent
-            )
-            .addAction(
-                android.R.drawable.ic_menu_view,
-                "লিপি স্টুডিও",
-                openAppPendingIntent
-            )
-            .addAction(
-                android.R.drawable.ic_menu_compass,
-                if (isBadgeShowing) "বল লুকান" else "বল দেখান",
-                toggleBadgePendingIntent
-            )
-            .addAction(
-                android.R.drawable.ic_menu_close_clear_cancel,
-                "কিল করুন",
-                killServicePendingIntent
-            )
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .build().apply {
-                flags = flags or Notification.FLAG_ONGOING_EVENT or Notification.FLAG_NO_CLEAR
-            }
+
+        if (isNotificationEnabled) {
+            notificationBuilder
+                .addAction(
+                    android.R.drawable.ic_menu_edit,
+                    "উইন্ডো খুলুন",
+                    openPopupPendingIntent
+                )
+                .addAction(
+                    android.R.drawable.ic_menu_view,
+                    "লিপি স্টুডিও",
+                    openAppPendingIntent
+                )
+                .addAction(
+                    android.R.drawable.ic_menu_compass,
+                    if (isBadgeShowing) "বল লুকান" else "বল দেখান",
+                    toggleBadgePendingIntent
+                )
+                .addAction(
+                    android.R.drawable.ic_menu_close_clear_cancel,
+                    "কিল করুন",
+                    killServicePendingIntent
+                )
+        }
+
+        val notification = notificationBuilder.build().apply {
+            flags = flags or Notification.FLAG_ONGOING_EVENT or Notification.FLAG_NO_CLEAR
+        }
 
         // Start in Foreground so the system does not kill the service or dismiss the notification
         try {
