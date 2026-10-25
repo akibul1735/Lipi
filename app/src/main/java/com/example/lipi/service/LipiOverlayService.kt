@@ -30,9 +30,13 @@ import android.view.animation.OvershootInterpolator
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -1358,6 +1362,100 @@ class LipiOverlayService : Service() {
         headerRow.addView(engineBadge)
         headerRow.addView(closeBtn)
 
+        // 1.5 Floating Text Selection Toolbar (Copy, Paste, Cut, Select All on Long Press)
+        val selectionToolbar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            setPadding(8, 6, 8, 6)
+            background = GradientDrawable().apply {
+                cornerRadius = 14f
+                setColor(0xFF142428.toInt())
+                setStroke((1.5f * displayMetrics.density).toInt(), 0xFF00BFA5.toInt()) // Glowing emerald teal border
+            }
+            val p = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 2, 0, 6)
+            }
+            layoutParams = p
+            elevation = 16f
+        }
+
+        val toolbarScrollView = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = true
+            val p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            layoutParams = p
+        }
+
+        val toolbarButtonsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        toolbarScrollView.addView(toolbarButtonsRow)
+        selectionToolbar.addView(toolbarScrollView)
+
+        val toolbarCloseBtn = TextView(this).apply {
+            text = "✕"
+            setTextColor(0xFF90A4AE.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(10, 6, 8, 6)
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                cornerRadius = 8f
+                setColor(0x22FFFFFF.toInt())
+            }
+            val p = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(6, 0, 0, 0)
+            }
+            layoutParams = p
+            setOnClickListener {
+                if (selectionToolbar.visibility == View.VISIBLE) {
+                    selectionToolbar.animate()
+                        .alpha(0f)
+                        .scaleY(0.8f)
+                        .setDuration(120)
+                        .withEndAction { selectionToolbar.visibility = View.GONE }
+                        .start()
+                }
+            }
+        }
+        selectionToolbar.addView(toolbarCloseBtn)
+
+        fun createToolbarButton(label: String, icon: String, btnBgColor: Int = 0x3300A896.toInt(), onClick: () -> Unit): TextView {
+            return TextView(this).apply {
+                text = "$icon $label"
+                setTextColor(Color.WHITE)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setPadding(12, 6, 12, 6)
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply {
+                    cornerRadius = 8f
+                    setColor(btnBgColor)
+                    setStroke(1, 0x4400BFA5.toInt())
+                }
+                val p = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(3, 0, 3, 0)
+                }
+                layoutParams = p
+                setOnClickListener {
+                    try {
+                        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    } catch (_: Exception) {}
+                    onClick()
+                }
+            }
+        }
+
         // 2. Secondary Input Field (clean, functional, quiet styling)
         val inputField = EditText(this).apply {
             hint = if (isReverseMode) "বাংলা লিখুন বা পেস্ট..." else "বাংলিশ লিখুন বা পেস্ট..."
@@ -1459,6 +1557,178 @@ class LipiOverlayService : Service() {
             setTextIsSelectable(true)
         }
         activeTranslationText = translationText
+
+        fun showSelectionToolbar(forInput: Boolean) {
+            toolbarButtonsRow.removeAllViews()
+
+            val targetIndicator = TextView(this).apply {
+                text = if (forInput) "ইনপুট:" else "ফলাফল:"
+                setTextColor(0xFF57DFCE.toInt())
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setPadding(4, 0, 6, 0)
+            }
+            toolbarButtonsRow.addView(targetIndicator)
+
+            if (forInput) {
+                val hasText = inputField.text.isNotEmpty()
+                val hasSelection = inputField.hasSelection()
+
+                // 1. Copy
+                if (hasText) {
+                    toolbarButtonsRow.addView(createToolbarButton("কপি", "📋") {
+                        val textToCopy = if (hasSelection) {
+                            val start = inputField.selectionStart.coerceAtLeast(0)
+                            val end = inputField.selectionEnd.coerceAtMost(inputField.text.length)
+                            if (end > start) inputField.text.substring(start, end) else inputField.text.toString()
+                        } else {
+                            inputField.text.toString()
+                        }
+                        if (textToCopy.isNotBlank()) {
+                            lastObservedClipText = textToCopy
+                            clipboardManager?.setPrimaryClip(ClipData.newPlainText("Input Text", textToCopy))
+                            safeToast("ইনপুট টেক্সট কপি হয়েছে!")
+                        }
+                    })
+                }
+
+                // 2. Cut
+                if (hasText) {
+                    toolbarButtonsRow.addView(createToolbarButton("কাট", "✂️", 0x33BD542E.toInt()) {
+                        val start = inputField.selectionStart.coerceAtLeast(0)
+                        val end = inputField.selectionEnd.coerceAtMost(inputField.text.length)
+                        val textToCopy: String
+                        if (hasSelection && end > start) {
+                            textToCopy = inputField.text.substring(start, end)
+                            inputField.text.delete(start, end)
+                        } else {
+                            textToCopy = inputField.text.toString()
+                            inputField.setText("")
+                        }
+                        if (textToCopy.isNotBlank()) {
+                            lastObservedClipText = textToCopy
+                            clipboardManager?.setPrimaryClip(ClipData.newPlainText("Input Text", textToCopy))
+                            safeToast("কাট সম্পন্ন হয়েছে!")
+                        }
+                        val remaining = inputField.text.toString()
+                        currentText = remaining
+                        val logicRes = processText(remaining)
+                        lastAppLogicResult = logicRes
+                        convertedBengali = logicRes
+                        translationText.text = if (logicRes.isNotBlank()) logicRes else if (isReverseMode) "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে..." else "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..."
+                    })
+                }
+
+                // 3. Paste
+                toolbarButtonsRow.addView(createToolbarButton("পেস্ট", "📌", 0x331E88E5.toInt()) {
+                    val clip = clipboardManager?.primaryClip
+                    val clipText = if (clip != null && clip.itemCount > 0) {
+                        clip.getItemAt(0)?.coerceToText(this@LipiOverlayService)?.toString() ?: ""
+                    } else ""
+
+                    if (clipText.isNotBlank()) {
+                        val start = inputField.selectionStart.coerceAtLeast(0)
+                        val end = inputField.selectionEnd.coerceAtMost(inputField.text.length)
+                        if (hasSelection && end > start) {
+                            inputField.text.replace(start, end, clipText)
+                        } else {
+                            inputField.text.insert(start, clipText)
+                        }
+                        val updated = inputField.text.toString()
+                        currentText = updated
+                        val logicRes = processText(updated)
+                        lastAppLogicResult = logicRes
+                        convertedBengali = logicRes
+                        translationText.text = logicRes
+                        safeToast("পেস্ট সম্পন্ন হয়েছে!")
+                        if (getOnlineEngineMode() == OnlineEngineMode.GEMINI_AI) {
+                            triggerGeminiTransliteration(updated, force = false)
+                        }
+                    } else {
+                        safeToast("ক্লিপবোর্ডে কোনো লেখা নেই")
+                    }
+                })
+
+                // 4. Select All
+                if (hasText) {
+                    toolbarButtonsRow.addView(createToolbarButton("সিলেক্ট অল", "🔲") {
+                        inputField.selectAll()
+                        safeToast("সব লেখা সিলেক্ট করা হয়েছে")
+                    })
+                }
+            } else {
+                // For output Translation Text
+                val outText = translationText.text.toString()
+                if (outText.isNotBlank() && outText != "এখানে বাংলা রূপান্তর দৃশ্যমান হবে..." && outText != "এখানে বাংলিশ রূপান্তর দৃশ্যমান হবে...") {
+                    toolbarButtonsRow.addView(createToolbarButton("কপি", "📋") {
+                        lastObservedClipText = outText
+                        val label = if (isReverseMode) "Banglish Translation" else "Bengali Translation"
+                        clipboardManager?.setPrimaryClip(ClipData.newPlainText(label, outText))
+                        val msg = if (isReverseMode) "বাংলিশ অনুবাদ কপি হয়েছে!" else "বাংলা অনুবাদ কপি হয়েছে!"
+                        safeToast(msg)
+                    })
+
+                    toolbarButtonsRow.addView(createToolbarButton("সিলেক্ট অল", "🔲") {
+                        safeToast("ফলাফল সম্পূর্ণ নির্বাচিত হয়েছে")
+                    })
+                }
+            }
+
+            if (selectionToolbar.visibility != View.VISIBLE) {
+                selectionToolbar.alpha = 0f
+                selectionToolbar.scaleY = 0.85f
+                selectionToolbar.visibility = View.VISIBLE
+                selectionToolbar.animate()
+                    .alpha(1f)
+                    .scaleY(1f)
+                    .setDuration(160)
+                    .setInterpolator(DecelerateInterpolator())
+                    .start()
+            }
+        }
+
+        inputField.setOnLongClickListener {
+            try {
+                inputField.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                if (inputField.text.isNotEmpty() && !inputField.hasSelection()) {
+                    inputField.selectAll()
+                }
+            } catch (_: Exception) {}
+            showSelectionToolbar(forInput = true)
+            true
+        }
+
+        translationText.setOnLongClickListener {
+            try {
+                translationText.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            } catch (_: Exception) {}
+            showSelectionToolbar(forInput = false)
+            true
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val inputCallback = object : ActionMode.Callback {
+                override fun onCreateActionMode(mode: ActionMode?, menu: Menu?): Boolean {
+                    showSelectionToolbar(forInput = true)
+                    return true
+                }
+                override fun onPrepareActionMode(mode: ActionMode?, menu: Menu?): Boolean = true
+                override fun onActionItemClicked(mode: ActionMode?, item: MenuItem?): Boolean = false
+                override fun onDestroyActionMode(mode: ActionMode?) {}
+            }
+            inputField.customSelectionActionModeCallback = inputCallback
+            inputField.customInsertionActionModeCallback = inputCallback
+
+            translationText.customSelectionActionModeCallback = object : ActionMode.Callback {
+                override fun onCreateActionMode(mode: ActionMode?, menu: Menu?): Boolean {
+                    showSelectionToolbar(forInput = false)
+                    return true
+                }
+                override fun onPrepareActionMode(mode: ActionMode?, menu: Menu?): Boolean = true
+                override fun onActionItemClicked(mode: ActionMode?, item: MenuItem?): Boolean = false
+                override fun onDestroyActionMode(mode: ActionMode?) {}
+            }
+        }
 
         outputCard.addView(outputHeaderRow)
         outputCard.addView(translationText)
@@ -1811,6 +2081,7 @@ class LipiOverlayService : Service() {
         actionRow.addView(copyBtn)
 
         container.addView(headerRow)
+        container.addView(selectionToolbar)
         container.addView(inputField)
         container.addView(outputCard)
         container.addView(statusRow)
