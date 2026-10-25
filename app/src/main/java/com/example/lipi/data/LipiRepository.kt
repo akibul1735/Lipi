@@ -313,14 +313,30 @@ class LipiRepository(private val context: Context) {
      * Batch auto-adds learned word mappings into the custom wordbook and saves them permanently.
      */
     fun autoAddLearnedWords(mappings: Map<String, String>): List<Pair<String, String>> {
+        if (mappings.isEmpty()) return emptyList()
         val learned = mutableListOf<Pair<String, String>>()
+        val current = _customWordbook.value.toMutableList()
         for ((rawBanglish, rawBengali) in mappings) {
             val banglish = rawBanglish.trim().lowercase().filter { it.isLetter() }
             val bengali = rawBengali.trim(',', '.', '?', '!', '।', ';', ':', '"', '\'', '‘', '’', '“', '”', ' ')
             if (banglish.length >= 2 && bengali.any { it in '\u0980'..'\u09FF' }) {
-                addWordbookEntry(banglish, bengali, "Gemini অটো-যুক্ত")
+                val existingIndex = current.indexOfFirst { it.banglish.equals(banglish, ignoreCase = true) }
+                if (existingIndex >= 0) {
+                    current[existingIndex] = current[existingIndex].copy(bengali = bengali, category = "Gemini অটো-যুক্ত")
+                } else {
+                    current.add(
+                        WordbookEntry(
+                            banglish = banglish,
+                            bengali = bengali,
+                            category = "Gemini অটো-যুক্ত"
+                        )
+                    )
+                }
                 learned.add(Pair(banglish, bengali))
             }
+        }
+        if (learned.isNotEmpty()) {
+            saveCustomWordbook(current)
         }
         return learned
     }

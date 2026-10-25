@@ -42,6 +42,8 @@ import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.R
 import com.example.lipi.engine.MixedScriptTokenizer
+import android.util.Log
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -90,10 +92,63 @@ class LipiOverlayService : Service() {
     private var activeInputField: EditText? = null
     private var activeTranslationText: TextView? = null
 
-    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val coroutineExceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        Log.e("LipiOverlayService", "Handled uncaught coroutine exception", throwable)
+    }
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob() + coroutineExceptionHandler)
     private var currentTransliterationJob: Job? = null
     private var isServiceKilled: Boolean = false
     private val repository by lazy { com.example.lipi.data.LipiRepository(this) }
+
+    private fun safeAddView(view: View?, params: WindowManager.LayoutParams): Boolean {
+        if (view == null) return false
+        if (!Settings.canDrawOverlays(this)) return false
+        return try {
+            if (!view.isAttachedToWindow && view.parent == null) {
+                windowManager?.addView(view, params)
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            Log.e("LipiOverlayService", "Error adding overlay view: ${e.message}")
+            false
+        }
+    }
+
+    private fun safeRemoveView(view: View?) {
+        if (view == null) return
+        try {
+            if (view.isAttachedToWindow || view.parent != null) {
+                windowManager?.removeViewImmediate(view)
+            }
+        } catch (e: Exception) {
+            try {
+                windowManager?.removeView(view)
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun safeUpdateViewLayout(view: View?, params: WindowManager.LayoutParams) {
+        if (view == null) return
+        try {
+            if (view.isAttachedToWindow || view.parent != null) {
+                windowManager?.updateViewLayout(view, params)
+            }
+        } catch (e: Exception) {
+            Log.e("LipiOverlayService", "Error updating view layout: ${e.message}")
+        }
+    }
+
+    private fun safeToast(message: String, duration: Int = Toast.LENGTH_SHORT) {
+        mainHandler.post {
+            try {
+                Toast.makeText(applicationContext, message, duration).show()
+            } catch (e: Exception) {
+                Log.w("LipiOverlayService", "Failed to show toast: ${e.message}")
+            }
+        }
+    }
 
     private var lastAppLogicResult: String = ""
     private var lastGeminiResult: String = ""
@@ -158,6 +213,7 @@ class LipiOverlayService : Service() {
                     stopSelf()
                     return START_NOT_STICKY
                 }
+                return START_STICKY
             }
 
             when (intent?.action) {
@@ -173,7 +229,7 @@ class LipiOverlayService : Service() {
                         }
                     } catch (_: Exception) {}
                     cancelPersistentNotification()
-                    Toast.makeText(this, "লিপি ব্যাকগ্রাউন্ড সার্ভিস ও নোটিফিকেশন বন্ধ করা হয়েছে", Toast.LENGTH_SHORT).show()
+                    safeToast("লিপি ব্যাকগ্রাউন্ড সার্ভিস ও নোটিফিকেশন বন্ধ করা হয়েছে")
                     stopSelf()
                     return START_NOT_STICKY
                 }
@@ -208,10 +264,10 @@ class LipiOverlayService : Service() {
             ACTION_TOGGLE_BADGE -> {
                 if (floatingBadgeView != null && floatingBadgeView?.visibility == View.VISIBLE) {
                     floatingBadgeView?.visibility = View.GONE
-                    Toast.makeText(this, "ভাসমান বল লুকানো হয়েছে", Toast.LENGTH_SHORT).show()
+                    safeToast("ভাসমান বল লুকানো হয়েছে")
                 } else {
                     ensureFloatingBadgeVisible()
-                    Toast.makeText(this, "ভাসমান বল দৃশ্যমান হয়েছে", Toast.LENGTH_SHORT).show()
+                    safeToast("ভাসমান বল দৃশ্যমান হয়েছে")
                 }
                 updatePersistentNotification()
             }
@@ -260,6 +316,7 @@ class LipiOverlayService : Service() {
      * Optimized to avoid CPU thrashing and unbounded memory allocations.
      */
     private fun checkClipboardForBanglish() {
+        if (translationPopupView != null) return
         val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
         val isMonitoringEnabled = prefs.getBoolean("auto_clipboard_monitoring", true)
         if (!isMonitoringEnabled) return
@@ -475,11 +532,7 @@ class LipiOverlayService : Service() {
                             layoutParams.y = (targetCenterY - dpSize / 2 - (12 * density)).toInt()
                         }
 
-                        try {
-                            windowManager?.updateViewLayout(badge, layoutParams)
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
+                        safeUpdateViewLayout(badge, layoutParams)
                         return true
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -524,9 +577,7 @@ class LipiOverlayService : Service() {
                                 interpolator = DecelerateInterpolator()
                                 addUpdateListener { va ->
                                     layoutParams.x = va.animatedValue as Int
-                                    try {
-                                        windowManager?.updateViewLayout(badge, layoutParams)
-                                    } catch (_: Exception) {}
+                                    safeUpdateViewLayout(badge, layoutParams)
                                 }
                             }
                             animator.start()
@@ -539,13 +590,8 @@ class LipiOverlayService : Service() {
         })
 
         floatingBadgeView = badge
-        try {
-            windowManager?.addView(floatingBadgeView, layoutParams)
-            mainHandler.post {
-                Toast.makeText(this, "লিপি 'A ⇄ অ' অনুবাদক বল স্ক্রিনে দৃশ্যমান হয়েছে!", Toast.LENGTH_SHORT).show()
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        if (safeAddView(floatingBadgeView, layoutParams)) {
+            safeToast("লিপি 'A ⇄ অ' অনুবাদক বল স্ক্রিনে দৃশ্যমান হয়েছে!")
         }
     }
 
@@ -655,16 +701,14 @@ class LipiOverlayService : Service() {
         isDismissTargetShowing = true
         isBallHoveringDismiss = false
 
-        try {
-            windowManager?.addView(container, params)
+        if (safeAddView(container, params)) {
             container.animate()
                 .alpha(1f)
                 .translationY(0f)
                 .setDuration(180)
                 .setInterpolator(DecelerateInterpolator())
                 .start()
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } else {
             dismissTargetView = null
             isDismissTargetShowing = false
         }
@@ -747,11 +791,7 @@ class LipiOverlayService : Service() {
                 .setDuration(150)
                 .setInterpolator(DecelerateInterpolator())
                 .withEndAction {
-                    try {
-                        windowManager?.removeView(target)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
+                    safeRemoveView(target)
                     onEnd?.invoke()
                 }
                 .start()
@@ -765,21 +805,15 @@ class LipiOverlayService : Service() {
         dismissTranslationPopup()
         hideDismissTarget()
 
-        if (floatingBadgeView != null) {
-            try {
-                windowManager?.removeView(floatingBadgeView)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+        floatingBadgeView?.let {
+            safeRemoveView(it)
             floatingBadgeView = null
         }
 
         val prefs = getSharedPreferences("lipi_preferences", Context.MODE_PRIVATE)
         prefs.edit().putBoolean("floating_enabled", false).apply()
         updatePersistentNotification()
-        mainHandler.post {
-            Toast.makeText(this, "ভাসমান অনুবাদক বল বন্ধ করা হয়েছে", Toast.LENGTH_SHORT).show()
-        }
+        safeToast("ভাসমান অনুবাদক বল বন্ধ করা হয়েছে")
     }
 
     /**
@@ -787,6 +821,7 @@ class LipiOverlayService : Service() {
      */
     private fun showQuickPreviewCard(bengaliText: String) {
         if (!Settings.canDrawOverlays(this)) return
+        if (translationPopupView != null) return
         dismissQuickPreview()
 
         val displayMetrics = resources.displayMetrics
@@ -874,9 +909,10 @@ class LipiOverlayService : Service() {
             }
             setOnClickListener {
                 try {
+                    lastObservedClipText = bengaliText
                     val clip = ClipData.newPlainText("Bengali Translation", bengaliText)
                     clipboardManager?.setPrimaryClip(clip)
-                    Toast.makeText(this@LipiOverlayService, "✓ বাংলা অনুবাদ ক্লিপবোর্ডে কপি হয়েছে!", Toast.LENGTH_SHORT).show()
+                    safeToast("✓ বাংলা অনুবাদ ক্লিপবোর্ডে কপি হয়েছে!")
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -893,8 +929,7 @@ class LipiOverlayService : Service() {
         card.scaleY = 0.85f
 
         quickPreviewView = card
-        try {
-            windowManager?.addView(quickPreviewView, layoutParams)
+        if (safeAddView(quickPreviewView, layoutParams)) {
             card.animate()
                 .alpha(1f)
                 .scaleX(1f)
@@ -902,8 +937,6 @@ class LipiOverlayService : Service() {
                 .setDuration(240)
                 .setInterpolator(android.view.animation.OvershootInterpolator(1.2f))
                 .start()
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
 
         // Auto dismiss after 6 seconds
@@ -914,12 +947,8 @@ class LipiOverlayService : Service() {
     private fun dismissQuickPreview() {
         quickPreviewDismissRunnable?.let { mainHandler.removeCallbacks(it) }
         quickPreviewDismissRunnable = null
-        if (quickPreviewView != null) {
-            try {
-                windowManager?.removeView(quickPreviewView)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+        quickPreviewView?.let {
+            safeRemoveView(it)
             quickPreviewView = null
         }
     }
@@ -1159,6 +1188,8 @@ class LipiOverlayService : Service() {
     }
 
     private fun showTranslationPopup(anchorX: Int, anchorY: Int, autoPasteFromClipboard: Boolean = true) {
+        if (!Settings.canDrawOverlays(this)) return
+        dismissQuickPreview()
         if (translationPopupView != null) {
             dismissTranslationPopup()
             return
@@ -1425,10 +1456,10 @@ class LipiOverlayService : Service() {
             }
         }
 
-        // 4. Subtle metadata & status row (non-intrusive, low visual priority)
+        // 4. Subtle metadata & status row (non-intrusive, low visual priority, stacked vertically to avoid horizontal squishing)
         val statusRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.START
             val params = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -1446,17 +1477,30 @@ class LipiOverlayService : Service() {
                 else -> "📱 অফলাইন লজিক"
             }
             setTextColor(0xFF6F868C.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f)
-            setLayoutParams(LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            val p = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            layoutParams = p
         }
         outputStatusLabelView = outputStatusLabel
 
         val aiFeedbackLabel = TextView(this).apply {
             text = ""
             setTextColor(0xFF6F868C.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
             visibility = View.GONE
-            setPadding(2, 0, 2, 0)
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, 2, 0, 0)
+            val p = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            layoutParams = p
         }
         aiFeedbackLabelView = aiFeedbackLabel
 
@@ -1716,18 +1760,19 @@ class LipiOverlayService : Service() {
 
                 if (textToCopy.isNotBlank()) {
                     try {
+                        lastObservedClipText = textToCopy
                         val clipLabel = if (isReverseMode) "Banglish Translation" else "Bengali Translation"
                         val clip = ClipData.newPlainText(clipLabel, textToCopy)
                         clipboardManager?.setPrimaryClip(clip)
                         val toastMsg = if (isReverseMode) "বাংলিশ লেখা কপি হয়েছে!" else "বাংলা অনুবাদ কপি হয়েছে!"
-                        Toast.makeText(this@LipiOverlayService, toastMsg, Toast.LENGTH_SHORT).show()
+                        safeToast(toastMsg)
                         dismissTranslationPopup()
                     } catch (e: Exception) {
-                        Toast.makeText(this@LipiOverlayService, "কপি ব্যর্থ হয়েছে: ${e.message}", Toast.LENGTH_SHORT).show()
+                        safeToast("কপি ব্যর্থ হয়েছে: ${e.message}")
                     }
                 } else {
                     val emptyMsg = if (isReverseMode) "কপি করার মতো কোনো বাংলিশ লেখা নেই।" else "কপি করার মতো কোনো বাংলা লেখা নেই।"
-                    Toast.makeText(this@LipiOverlayService, emptyMsg, Toast.LENGTH_SHORT).show()
+                    safeToast(emptyMsg)
                 }
             }
         }
@@ -1746,11 +1791,7 @@ class LipiOverlayService : Service() {
         rootOverlay.addView(container)
         translationPopupView = rootOverlay
 
-        try {
-            windowManager?.addView(translationPopupView, windowLayoutParams)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        safeAddView(translationPopupView, windowLayoutParams)
 
         // If opened with pre-existing text or auto-paste, trigger Gemini AI if enabled
         if (currentText.isNotBlank() && getOnlineEngineMode() == OnlineEngineMode.GEMINI_AI) {
@@ -1760,7 +1801,7 @@ class LipiOverlayService : Service() {
         if (autoPasteFromClipboard) {
             var toastShown = false
             if (currentText.isNotBlank()) {
-                Toast.makeText(this@LipiOverlayService, "✓ ক্লিপবোর্ড থেকে স্বয়ংক্রিয় পেস্ট সম্পন্ন!", Toast.LENGTH_SHORT).show()
+                safeToast("✓ ক্লিপবোর্ড থেকে স্বয়ংক্রিয় পেস্ট সম্পন্ন!")
                 toastShown = true
             }
             rootOverlay.post {
@@ -1796,7 +1837,7 @@ class LipiOverlayService : Service() {
                             }
 
                             if (!toastShown) {
-                                Toast.makeText(this@LipiOverlayService, "✓ ক্লিপবোর্ড থেকে স্বয়ংক্রিয় পেস্ট সম্পন্ন!", Toast.LENGTH_SHORT).show()
+                                safeToast("✓ ক্লিপবোর্ড থেকে স্বয়ংক্রিয় পেস্ট সম্পন্ন!")
                             }
                         }
                     }
@@ -1817,12 +1858,8 @@ class LipiOverlayService : Service() {
         outputStatusLabelView = null
         aiFeedbackLabelView = null
         aiSwitchBtnView = null
-        if (translationPopupView != null) {
-            try {
-                windowManager?.removeView(translationPopupView)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+        translationPopupView?.let {
+            safeRemoveView(it)
             translationPopupView = null
         }
     }
@@ -1830,22 +1867,14 @@ class LipiOverlayService : Service() {
     private fun dismissAllOverlays() {
         dismissQuickPreview()
         dismissTranslationPopup()
-        if (dismissTargetView != null) {
-            try {
-                windowManager?.removeView(dismissTargetView)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+        dismissTargetView?.let {
+            safeRemoveView(it)
             dismissTargetView = null
             isDismissTargetShowing = false
             isBallHoveringDismiss = false
         }
-        if (floatingBadgeView != null) {
-            try {
-                windowManager?.removeView(floatingBadgeView)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+        floatingBadgeView?.let {
+            safeRemoveView(it)
             floatingBadgeView = null
         }
     }

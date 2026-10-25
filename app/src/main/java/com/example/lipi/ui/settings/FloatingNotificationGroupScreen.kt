@@ -211,7 +211,11 @@ fun FloatingNotificationGroupScreen(
                             action = LipiOverlayService.ACTION_UPDATE_NOTIFICATION
                         }
                         try {
-                            androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
+                            if (checked) {
+                                androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
+                            } else {
+                                context.startService(serviceIntent)
+                            }
                             Toast.makeText(context, if (checked) "কুইক এক্সেস নোটিফিকেশন বার চালু হয়েছে!" else "নোটিফিকেশন বার বন্ধ করা হয়েছে", Toast.LENGTH_SHORT).show()
                         } catch (e: Exception) {
                             e.printStackTrace()
