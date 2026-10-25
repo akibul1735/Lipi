@@ -666,10 +666,24 @@ object LipiOnlineEngine {
                         "Convert the following Bengali text into clean, casual, natural phonetic Banglish script as commonly typed in chat messages (e.g., 'শুরু' -> 'suru', 'নাকি' -> 'naki', 'আবার' -> 'abar', 'করলি' -> 'korli'). " +
                         "Preserve emojis, punctuation, and question marks exactly. Output ONLY the converted Banglish text with no explanations or preamble."
             } else {
-                "You are Lipi, an expert Banglish to Bengali transliteration engine. " +
-                        "Convert the following casual Banglish text into authentic, natural conversational Bengali script. " +
-                        "Fix common phonetic typing mistakes and slang (e.g., 'suru' -> 'শুরু', 'naki' -> 'নাকি', 'abr' -> 'আবার', 'korli' -> 'করলি'). " +
-                        "Preserve emojis, punctuation, and question marks exactly. Output ONLY the converted Bengali text with no explanations or preamble."
+                "You are Lipi, an expert Banglish and English-mixed conversational Bengali translation engine.\n" +
+                        "Your mission is to convert casual Banglish, English-mixed chat, or phonetic text into fluent, authentic, easily understandable, and natural conversational Bengali (সহজবোধ্য, স্বাভাবিক ও প্রাঞ্জল প্রমিত চলিত বাংলা).\n\n" +
+                        "CRITICAL CONVERSATIONAL & MEANING RULES:\n" +
+                        "1. Meaningful Bengali Translations: When English words or phrases express concepts, feelings, or idioms rather than loan nouns, translate them into natural, easily understandable, everyday Bengali meaning rather than awkward raw phonetic English transliterations:\n" +
+                        "   - 'Age gap onek' -> 'বয়সের অনেক পার্থক্য' (NEVER 'এজ গ্যাপ অনেক')\n" +
+                        "   - 'Time waste hocche' -> 'সময় নষ্ট হচ্ছে' (NEVER 'টাইম ওয়েস্ট হচ্ছে')\n" +
+                        "   - 'Mind korio na' / 'Mind koro na' -> 'কিছু মনে করো না' (NEVER 'মাইন্ড করিও না')\n" +
+                        "   - 'Hard work korte hobe' -> 'কঠোর পরিশ্রম করতে হবে'\n" +
+                        "   - 'Problem solve hoye geche' -> 'সমস্যার সমাধান হয়ে গেছে'\n" +
+                        "   - 'Decision nite parchi na' -> 'সিদ্ধান্ত নিতে পারছি না'\n" +
+                        "   - 'Help lagbe' / 'Help koro' -> 'সাহায্য লাগবে' / 'সাহায্য করো'\n" +
+                        "   - 'Wait koro' -> 'অপেক্ষা করো'\n" +
+                        "   - 'Carefully jao' -> 'সাবধানে যাও'\n" +
+                        "   - 'Take care' -> 'নিজের যত্ন নিও'\n" +
+                        "   - 'Good news' -> 'ভালো খবর'\n" +
+                        "2. Natural Loanwords & Proper Nouns: Common technological terms, proper nouns, and universally accepted modern loanwords should be kept in authentic Bengali script (e.g., 'mobile' -> 'মোবাইল', 'doctor' -> 'ডাক্তার', 'school' -> 'স্কুল', 'college' -> 'কলেজ', 'bus' -> 'বাস', 'train' -> 'ট্রেন', 'Facebook' -> 'ফেসবুক', 'WhatsApp' -> 'হোয়াটসঅ্যাপ', 'link' -> 'লিঙ্ক', 'office' -> 'অফিস').\n" +
+                        "3. Banglish Slang & Phonetic Fixes: Fix casual chat abbreviations, typos, and slang into standard conversational Bengali (e.g., 'suru' -> 'শুরু', 'naki' -> 'নাকি', 'abr' -> 'আবার', 'korli' -> 'করলি', 'kmn aso' -> 'কেমন আছো', 'valo' -> 'ভালো', 'khbr ki' -> 'খবর কি').\n" +
+                        "4. Output format: Output ONLY the converted natural Bengali text with no explanations, notes, markdown formatting, quotation marks, or preamble."
             }
 
             val jsonBody = JSONObject().apply {

@@ -60,6 +60,8 @@ object LipiDictionary {
     // English loanwords commonly used in Bengali texting, with their authentic Bengali representations
     // Used when user chooses "সকল টেক্সট বাংলায়" (ALL_BENGALI style)
     val COMMON_ENGLISH_LOANWORDS_TO_BENGALI = mapOf(
+        "age" to "বয়স",
+        "gap" to "পার্থক্য",
         "app" to "অ্যাপ",
         "apps" to "অ্যাপস",
         "meeting" to "মিটিং",

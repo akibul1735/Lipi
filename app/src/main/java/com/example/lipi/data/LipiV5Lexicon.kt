@@ -8,6 +8,19 @@ object LipiV5Lexicon {
 
     // Common phrases sorted by character length descending (longest match first)
     val PHRASES: List<Pair<String, String>> = listOf(
+        "age gap onek" to "বয়সের অনেক পার্থক্য",
+        "age gap beshi" to "বয়সের পার্থক্য বেশি",
+        "age gap kom" to "বয়সের পার্থক্য কম",
+        "age difference" to "বয়সের ব্যবধান",
+        "mind korben na" to "কিছু মনে করবেন না",
+        "time waste hocche" to "সময় নষ্ট হচ্ছে",
+        "mind korio na" to "কিছু মনে করো না",
+        "mind koro na" to "কিছু মনে করো না",
+        "hard work koro" to "কঠোর পরিশ্রম করো",
+        "problem solve" to "সমস্যার সমাধান",
+        "time waste" to "সময় নষ্ট",
+        "take care" to "নিজের যত্ন নিও",
+        "age gap" to "বয়সের পার্থক্য",
         "ami tomake bhalobashi" to "আমি তোমাকে ভালোবাসি",
         "ami tomake valobashi" to "আমি তোমাকে ভালোবাসি",
         "kono shomossha nei" to "কোনো সমস্যা নেই",
